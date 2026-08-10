@@ -1,0 +1,49 @@
+#pragma once
+
+#include "BLEProtocol.hpp"
+
+#include <cstddef>
+#include <cstdint>
+
+constexpr uint8_t BLEQUEUE_INIT_SUCCESS = 0x00;
+constexpr uint8_t BLEQUEUE_CREATE_FAIL = 0x01;
+constexpr uint8_t BLEQUEUE_TASK_FAIL = 0x02;
+
+constexpr uint32_t CLOCK_STACK_DEPTH = 4096;
+constexpr uint8_t CLOCK_QUEUE_SIZE = 4;
+
+enum class ClockJobType : uint8_t {
+  TaskShutdown,
+  Alarm,
+  Settings
+};
+
+struct ClockJob {
+  ClockJobType type;
+  union {
+    uint8_t alarm[ALARM_PACKET_SIZE];
+    uint8_t settings[SETTINGS_PACKET_SIZE];
+  } packet;
+};
+
+inline ClockJob makeClockJob(ClockJobType type, const uint8_t* data) {
+  ClockJob job{};
+  job.type = type;
+
+  const size_t packetSize = type == ClockJobType::Alarm
+      ? ALARM_PACKET_SIZE
+      : SETTINGS_PACKET_SIZE;
+  uint8_t* destination = type == ClockJobType::Alarm
+      ? job.packet.alarm
+      : job.packet.settings;
+
+  for (size_t i = 0; i < packetSize; ++i) {
+    destination[i] = data[i];
+  }
+
+  return job;
+}
+
+uint8_t initializeBLETaskQueue();
+bool deinitializeBLETaskQueue();
+bool queueClockJob(const ClockJob& job);

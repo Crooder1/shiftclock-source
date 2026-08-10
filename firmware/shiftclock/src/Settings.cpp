@@ -1,4 +1,4 @@
-#include "settings.hpp"
+#include "Settings.hpp"
 #include <Arduino.h>
 
 struct SettingsEntry settings_array[] = {

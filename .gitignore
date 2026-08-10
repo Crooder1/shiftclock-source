@@ -1,0 +1,13 @@
+build/
+.vscode
+
+# Temp kate edits
+*.kate-swp
+
+# Isolated implementation worktrees
+.worktrees/
+
+# AI Stuff
+superpowers/
+AGENTS.md
+.codex/

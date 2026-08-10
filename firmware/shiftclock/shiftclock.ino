@@ -1,7 +1,9 @@
 #include <MD_MAX72xx.h>
 #include <string>
-#include "settings.hpp"
-#include "display.hpp"
+
+#include "src/Display.hpp"
+#include "src/Settings.hpp"
+#include "src/ble/BLE.hpp"
 
 // MAX7219 Pins
 // TODO: SHOULD USE PROPER PINS NEXT TIME! IE. DIN->GPIO13 CLK->GPIO14 LOAD->ANY/GPIO15
@@ -30,6 +32,10 @@ void setup() {
   lc.clear();
 
   initSettings(&lc);
+
+  if (!initializeBLE()) {
+    Serial.println("BLE initialization failed");
+  }
 }
 
 void loop() {

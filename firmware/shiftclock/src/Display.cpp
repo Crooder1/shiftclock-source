@@ -1,4 +1,4 @@
-#include "display.hpp"
+#include "Display.hpp"
 #include <Arduino.h>
 
 const uint8_t number_symbols[] = {ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE};
