@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include <stddef.h>
-#include <LedControl.h>
+#include <MD_MAX72xx.h>
 #include <string>
 
 #define TIMEZONE_SETTING 0
@@ -32,7 +32,7 @@ struct SettingsEntry {
 
 extern struct SettingsEntry settings_array[];
 
-void initSettings(LedControl*);
+void initSettings(MD_MAX72XX*);
 
 void setSetting(uint8_t, int8_t);
 int8_t getSetting(uint8_t);

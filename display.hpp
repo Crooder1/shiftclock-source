@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <stdint.h>
-#include <LedControl.h>
+#include <MD_MAX72xx.h>
 #include <stddef.h>
 
 
@@ -71,16 +71,15 @@
 #define PM_SYMBOL 0x6715
 
 #define CONNECTING_SYMBOL 0x4E1D151580808080
-#define SYNCING_SYMBOL 0x5B3B154E80808080 
 
 //#define NUMBER_SYMBOLS {ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE}
 //#define NUMBER_SYMBOLS_DP {ZERO_DP, ONE_DP, TWO_DP, THREE_DP, FOUR_DP, FIVE_DP, SIX_DP, SEVEN_DP, EIGHT_DP, NINE_DP}
-extern const uint8 number_symbols[];
-extern const uint8 number_dp_symbols[];
+extern const uint8_t number_symbols[];
+extern const uint8_t number_dp_symbols[];
 
-void displayTime(LedControl*, uint64_t, uint8_t, bool, bool, bool);
-void displayDigit(LedControl*, uint8_t, uint8_t, bool);
+void displayTime(MD_MAX72XX*, uint64_t, uint8_t, bool, bool, bool);
+void displayDigit(MD_MAX72XX*, uint8_t, uint8_t, bool);
 uint64_t numberToSymbol(uint32_t, uint8_t);
-void displaySymbols(LedControl*, uint64_t);
+void displaySymbols(MD_MAX72XX*, uint64_t);
 uint64_t dpModeToSymbol(uint8_t, uint64_t);
-void displayNumber(LedControl*, uint32_t);
+void displayNumber(MD_MAX72XX*, uint32_t);

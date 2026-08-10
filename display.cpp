@@ -1,15 +1,17 @@
 #include "display.hpp"
 #include <Arduino.h>
 
-const uint8 number_symbols[] = {ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE};
-const uint8 number_dp_symbols[] = {ZERO_DP, ONE_DP, TWO_DP, THREE_DP, FOUR_DP, FIVE_DP, SIX_DP, SEVEN_DP, EIGHT_DP, NINE_DP};
+const uint8_t number_symbols[] = {ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE};
+const uint8_t number_dp_symbols[] = {ZERO_DP, ONE_DP, TWO_DP, THREE_DP, FOUR_DP, FIVE_DP, SIX_DP, SEVEN_DP, EIGHT_DP, NINE_DP};
+const uint8_t digit_symbols[] = {ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE, A_S, B_S, C_S, D_S, E_S, F_S};
 
-void displayDigit(LedControl* lc, uint8_t index, uint8_t digit, bool dp) {
-  lc->setDigit(0, index, digit, dp);
+void displayDigit(MD_MAX72XX* lc, uint8_t index, uint8_t digit, bool dp) {
+  if (index > 7 || digit > 15) return;
+  lc->setColumn(0, index, digit_symbols[digit] | (dp ? DP_S : 0));
 }
 
 // TODO - option for hour formatting and AM/PM
-void displayTime(LedControl* lc, uint64_t millis, uint8_t dp_mode, bool meri_en, bool seconds_en, bool twelve_en) {
+void displayTime(MD_MAX72XX* lc, uint64_t millis, uint8_t dp_mode, bool meri_en, bool seconds_en, bool twelve_en) {
   
   int seconds = (millis / 1000L) % 60;
   int minutes = (millis / (60 * 1000L)) % 60;
@@ -62,7 +64,7 @@ uint64_t numberToSymbol(uint32_t num, uint8_t digits) {
 uint64_t symbol_cache = 0;
 
 //helper: display up to 8 symbols
-void displaySymbols(LedControl* lc, uint64_t symbols) {
+void displaySymbols(MD_MAX72XX* lc, uint64_t symbols) {
   
   if (symbol_cache == symbols) return;
   
@@ -70,7 +72,7 @@ void displaySymbols(LedControl* lc, uint64_t symbols) {
   symbol_cache = symbols;
   for (int i = 7; i >= 0; i--) {
     int sym = (symbols >> ((7 - i) * 8)) & 0xFF;
-      lc->setRow(0, i, sym);
+      lc->setColumn(0, i, sym);
   }
   interrupts();
 }
@@ -102,10 +104,10 @@ uint64_t dpModeToSymbol(uint8_t mode, uint64_t millis) {
 }
 
 // helper: display up to 8 digits
-void displayNumber(LedControl* lc, uint32_t num) {
+void displayNumber(MD_MAX72XX* lc, uint32_t num) {
   for (int i = 7; i >= 0; i--) {
     int digit = num % 10;
-    lc->setDigit(0, i, digit, false);
+    lc->setColumn(0, i, number_symbols[digit]);
     num /= 10;
   }
 }

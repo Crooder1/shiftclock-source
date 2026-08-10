@@ -14,10 +14,10 @@ struct SettingsEntry settings_array[] = {
   {TESTING_SETTING,       "Testing",        0,  0, 0,   0x0102040810204080, 0, NULL, NULL},
 };
 
-LedControl* settings_lc = NULL;
+MD_MAX72XX* settings_lc = NULL;
 bool initialized = false;
 
-void initSettings(LedControl* lc_in) {
+void initSettings(MD_MAX72XX* lc_in) {
   settings_lc = lc_in;
   initialized = true;
 }
@@ -56,5 +56,5 @@ void onBrightnessSet(uint8_t brightness) {
 
   if (!initialized) return;
 
-  settings_lc->setIntensity(0, brightness);
+  settings_lc->control(MD_MAX72XX::INTENSITY, brightness);
 }
