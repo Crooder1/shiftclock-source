@@ -30,12 +30,14 @@ class ShiftclockBleModule : Module() {
       )
     }
 
-    AsyncFunction("connect") { _: String ->
+    AsyncFunction("connect") { deviceId: String ->
       throw CodedException(
         "ERR_NOT_IMPLEMENTED",
         "ShiftclockBle.connect is not implemented",
         null
       )
+
+      Unit
     }
 
     AsyncFunction("disconnect") {
@@ -46,20 +48,24 @@ class ShiftclockBleModule : Module() {
       )
     }
 
-    AsyncFunction("writeAlarm") { _: Map<String, Any?> ->
+    AsyncFunction("writeAlarm") { payload: Map<String, Any?> ->
       throw CodedException(
         "ERR_NOT_IMPLEMENTED",
         "ShiftclockBle.writeAlarm is not implemented",
         null
       )
+
+      Unit
     }
 
-    AsyncFunction("writeSettings") { _: Map<String, Any?> ->
+    AsyncFunction("writeSettings") { payload: Map<String, Any?> ->
       throw CodedException(
         "ERR_NOT_IMPLEMENTED",
         "ShiftclockBle.writeSettings is not implemented",
         null
       )
+
+      Unit
     }
   }
 }

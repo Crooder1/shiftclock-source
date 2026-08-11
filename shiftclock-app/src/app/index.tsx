@@ -1,98 +1,306 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
+import {
+  addConnectionStateListener,
+  addDeviceDiscoveredListener,
+  connect,
+  scan,
+  stopScan,
+  writeAlarm,
+  writeSettings,
+  type Alarm,
+  type ClockSettings,
+  type ConnectionStateChangedEvent,
+  type ShiftclockDevice,
+} from '../../modules/shiftclock-ble';
+
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+const PLACEHOLDER_ALARM: Alarm = {
+  daysActive: 0,
+  secondsOfDay: 0,
+  flashUntilOff: false,
+  rampDurationSeconds: 0,
+  volume: 0,
+};
+
+const PLACEHOLDER_SETTINGS: ClockSettings = { id: 0, value: 0 };
+
+type ActionButtonProps = {
+  accessibilityLabel: string;
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+};
+
+function ActionButton({ accessibilityLabel, disabled, label, onPress }: ActionButtonProps) {
+  const theme = useTheme();
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.button,
+        { backgroundColor: disabled ? theme.backgroundSelected : theme.text },
+        pressed && !disabled && styles.pressed,
+      ]}>
+      <ThemedText
+        type="smallBold"
+        style={{ color: disabled ? theme.textSecondary : theme.background }}>
+        {label}
+      </ThemedText>
+    </Pressable>
   );
 }
 
-export default function HomeScreen() {
+function messageFromError(cause: unknown) {
+  return cause instanceof Error ? cause.message : 'BLE operation failed';
+}
+
+export default function ClockScreen() {
+  const theme = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
+  const [devices, setDevices] = useState<Record<string, ShiftclockDevice>>({});
+  const [connection, setConnection] = useState<ConnectionStateChangedEvent>({
+    state: 'disconnected',
+    deviceId: null,
+  });
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const discoveredDevices = useMemo(() => Object.values(devices), [devices]);
+  const connected = connection.state === 'connected';
+
+  useEffect(() => {
+    const discoveredSubscription = addDeviceDiscoveredListener((device) => {
+      setDevices((currentDevices) => ({ ...currentDevices, [device.id]: device }));
+    });
+    const connectionSubscription = addConnectionStateListener(setConnection);
+
+    return () => {
+      discoveredSubscription.remove();
+      connectionSubscription.remove();
+      void stopScan().catch(() => undefined);
+    };
+  }, []);
+
+  async function runAction(label: string, operation: () => Promise<void>, successMessage: string) {
+    if (pendingAction) {
+      return;
+    }
+
+    setPendingAction(label);
+    setActionMessage(null);
+
+    try {
+      await operation();
+      setActionMessage(successMessage);
+    } catch (cause) {
+      setActionMessage(messageFromError(cause));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  const connectionSummary = connection.deviceId
+    ? `${connection.state} · ${connection.deviceId}`
+    : connection.state;
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
+    <ScrollView
+      style={{ backgroundColor: theme.background }}
+      contentContainerStyle={[
+        styles.scrollContent,
+        {
+          paddingTop: safeAreaInsets.top + Spacing.four,
+          paddingBottom: safeAreaInsets.bottom + BottomTabInset + Spacing.four,
+        },
+      ]}>
+      <ThemedView style={styles.container}>
+        <View style={styles.heading}>
+          <ThemedText type="subtitle">Shiftclock</ThemedText>
+          <ThemedText themeColor="textSecondary">
+            Discover a clock, connect, and send test packets.
           </ThemedText>
+        </View>
+
+        <ThemedView type="backgroundElement" style={styles.statusCard}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Connection
+          </ThemedText>
+          <ThemedText style={styles.capitalize}>{connectionSummary}</ThemedText>
         </ThemedView>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+        <View style={styles.section}>
+          <View style={styles.sectionHeading}>
+            <ThemedText type="smallBold">Devices</ThemedText>
+            <ActionButton
+              accessibilityLabel="Scan for devices"
+              disabled={pendingAction !== null}
+              label={pendingAction === 'scan' ? 'Scanning…' : 'Scan for devices'}
+              onPress={() =>
+                void runAction('scan', scan, 'Scanning for nearby Shiftclock devices')
+              }
+            />
+          </View>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+          {discoveredDevices.length === 0 ? (
+            <ThemedView type="backgroundElement" style={styles.emptyCard}>
+              <ThemedText type="small" themeColor="textSecondary">
+                No devices discovered yet.
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            discoveredDevices.map((device) => {
+              const deviceName = device.name ?? 'Unnamed Shiftclock';
+              const actionName = `connect:${device.id}`;
+              const isActiveDevice = connection.deviceId === device.id;
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+              return (
+                <ThemedView key={device.id} type="backgroundElement" style={styles.deviceCard}>
+                  <View style={styles.deviceDetails}>
+                    <ThemedText>{deviceName}</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {device.id}
+                    </ThemedText>
+                    {device.rssi === null ? null : (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        RSSI {device.rssi} dBm
+                      </ThemedText>
+                    )}
+                  </View>
+                  <ActionButton
+                    accessibilityLabel={`Connect to ${deviceName}`}
+                    disabled={pendingAction !== null || (connected && isActiveDevice)}
+                    label={
+                      connected && isActiveDevice
+                        ? 'Connected'
+                        : pendingAction === actionName
+                          ? 'Connecting…'
+                          : 'Connect'
+                    }
+                    onPress={() =>
+                      void runAction(
+                        actionName,
+                        () => connect(device.id),
+                        `Connection requested for ${deviceName}`
+                      )
+                    }
+                  />
+                </ThemedView>
+              );
+            })
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="smallBold">Test packets</ThemedText>
+          <ThemedView type="backgroundElement" style={styles.packetCard}>
+            <ActionButton
+              accessibilityLabel="Send alarm packet"
+              disabled={!connected || pendingAction !== null}
+              label={pendingAction === 'alarm' ? 'Sending…' : 'Send alarm packet'}
+              onPress={() =>
+                void runAction('alarm', () => writeAlarm(PLACEHOLDER_ALARM), 'Alarm packet sent')
+              }
+            />
+            <ActionButton
+              accessibilityLabel="Send settings packet"
+              disabled={!connected || pendingAction !== null}
+              label={pendingAction === 'settings' ? 'Sending…' : 'Send settings packet'}
+              onPress={() =>
+                void runAction(
+                  'settings',
+                  () => writeSettings(PLACEHOLDER_SETTINGS),
+                  'Settings packet sent'
+                )
+              }
+            />
+          </ThemedView>
+        </View>
+
+        {actionMessage ? (
+          <ThemedView type="backgroundElement" style={styles.messageCard}>
+            <ThemedText type="small">{actionMessage}</ThemedText>
+          </ThemedView>
+        ) : null}
+      </ThemedView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+  },
   container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
+    width: '100%',
     maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
     gap: Spacing.four,
   },
-  title: {
-    textAlign: 'center',
+  heading: {
+    gap: Spacing.one,
   },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
+  statusCard: {
+    gap: Spacing.one,
+    padding: Spacing.three,
     borderRadius: Spacing.four,
+  },
+  capitalize: {
+    textTransform: 'capitalize',
+  },
+  section: {
+    gap: Spacing.two,
+  },
+  sectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  emptyCard: {
+    padding: Spacing.four,
+    borderRadius: Spacing.four,
+  },
+  deviceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    padding: Spacing.three,
+    borderRadius: Spacing.four,
+  },
+  deviceDetails: {
+    flex: 1,
+    gap: Spacing.half,
+  },
+  packetCard: {
+    gap: Spacing.two,
+    padding: Spacing.three,
+    borderRadius: Spacing.four,
+  },
+  button: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three,
+  },
+  pressed: {
+    opacity: 0.75,
+  },
+  messageCard: {
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
   },
 });
