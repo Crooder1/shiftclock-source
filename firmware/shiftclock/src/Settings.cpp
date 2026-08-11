@@ -1,4 +1,7 @@
 #include "Settings.hpp"
+
+#include "Display.hpp"
+
 #include <Arduino.h>
 
 struct SettingsEntry settings_array[] = {
@@ -7,24 +10,20 @@ struct SettingsEntry settings_array[] = {
   {SECONDS_SETTING,       "Seconds",        0,  0, 1,   0x5B4F4E8080808000, 1, NULL, NULL},
   {MOVINGDP_SETTING,      "MovingDP",       0,  0, 2,   0x3D67808080808000, 1, NULL, NULL},
   {VOLUME_SETTING,        "Volume",         20, 0, 100, 0x1C1D308080000000, 3, NULL, NULL},
-  {ALARMGAME_SETTING,     "AlarmHard",      0,  0, 2,   0x3777053D80808000, 1, NULL, NULL},
-  {ALARMRAMP_SETTING,     "AlarmFading",    0,  0, 60,  0x47773D4F80800000, 2, NULL, NULL},
   {CLOCKFORM_SETTING,     "ClockForm",      0,  0, 1,   0x471D058080808000, 1, NULL, NULL},
   {MERIINDICATOR_SETTING, "MeriIndicator",  1,  0, 1,   0x7715671580808000, 1, NULL, NULL},
   {TESTING_SETTING,       "Testing",        0,  0, 0,   0x0102040810204080, 0, NULL, NULL},
 };
 
-MD_MAX72XX* settings_lc = NULL;
 bool initialized = false;
 
-void initSettings(MD_MAX72XX* lc_in) {
-  settings_lc = lc_in;
+void initSettings() {
   initialized = true;
 }
 
 void setSetting(uint8_t id, int8_t val) {
 
-  //if (!initialized) return;
+  // if (!initialized) return;
 
   struct SettingsEntry entry = settings_array[id];
 
@@ -43,7 +42,7 @@ void setSetting(uint8_t id, int8_t val) {
 
 int8_t getSetting(uint8_t id) {
 
-  //if (!initialized) return 0;
+  // if (!initialized) return 0;
 
   struct SettingsEntry entry = settings_array[id];
 
@@ -52,9 +51,6 @@ int8_t getSetting(uint8_t id) {
   return entry.value;
 }
 
-void onBrightnessSet(uint8_t brightness) {
-
-  if (!initialized) return;
-
-  settings_lc->control(MD_MAX72XX::INTENSITY, brightness);
+bool commitSettings() {
+  return false;
 }

@@ -1,10 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <stdint.h>
 #include <MD_MAX72xx.h>
-#include <stddef.h>
-
 
 // S standards for symbol
 #define DP_S 0x80
@@ -72,14 +69,25 @@
 
 #define CONNECTING_SYMBOL 0x4E1D151580808080
 
+#define MD_MAX72XX_DIN_PIN 7
+#define MD_MAX72XX_LOAD_PIN 10
+#define MD_MAX72XX_CLK_PIN 6
+
 //#define NUMBER_SYMBOLS {ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE}
 //#define NUMBER_SYMBOLS_DP {ZERO_DP, ONE_DP, TWO_DP, THREE_DP, FOUR_DP, FIVE_DP, SIX_DP, SEVEN_DP, EIGHT_DP, NINE_DP}
 extern const uint8_t number_symbols[];
 extern const uint8_t number_dp_symbols[];
 
-void displayTime(MD_MAX72XX*, uint64_t, uint8_t, bool, bool, bool);
-void displayDigit(MD_MAX72XX*, uint8_t, uint8_t, bool);
+void initializeDisplay();
+void deinitializeDisplay();
+
+void displayTime(uint64_t, uint8_t, bool, bool, bool);
+void displayDigit(uint8_t, uint8_t, bool);
+void displaySymbols(uint64_t);
+void displayNumber(uint32_t);
+
+void onBrightnessSet(uint8_t);
+
+// helpers
 uint64_t numberToSymbol(uint32_t, uint8_t);
-void displaySymbols(MD_MAX72XX*, uint64_t);
 uint64_t dpModeToSymbol(uint8_t, uint64_t);
-void displayNumber(MD_MAX72XX*, uint32_t);

@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Arduino.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <MD_MAX72xx.h>
 #include <string>
 
 #define TIMEZONE_SETTING 0
@@ -11,11 +8,9 @@
 #define SECONDS_SETTING 2
 #define MOVINGDP_SETTING 3
 #define VOLUME_SETTING 4
-#define ALARMGAME_SETTING 5
-#define ALARMRAMP_SETTING 6
-#define CLOCKFORM_SETTING 7
-#define MERIINDICATOR_SETTING 8
-#define TESTING_SETTING 9
+#define CLOCKFORM_SETTING 5
+#define MERIINDICATOR_SETTING 6
+#define TESTING_SETTING 7
 
 struct SettingsEntry {
   uint8_t id;
@@ -27,14 +22,13 @@ struct SettingsEntry {
   uint8_t value_length;
   void (*onSet)(uint8_t); // Nullable
   void (*onGet)(uint8_t); // Nullable
-
 };
 
 extern struct SettingsEntry settings_array[];
 
-void initSettings(MD_MAX72XX*);
+void initSettings();
 
 void setSetting(uint8_t, int8_t);
 int8_t getSetting(uint8_t);
 
-void onBrightnessSet(uint8_t);
+bool commitSettings();
