@@ -75,7 +75,7 @@ bool commitSettings() {
   return true;
 }
 
-bool reloadSettings() {
+bool loadSettings() {
 
   if (!preferences.begin(SETTINGS_PREFS_NAMESPACE, true)) {
     return false;

@@ -33,5 +33,5 @@ extern struct SettingsEntry settings_array[];
 void setSetting(uint8_t, int8_t);
 int8_t getSetting(uint8_t);
 
-bool reloadSettings();
+bool loadSettings();
 bool commitSettings();

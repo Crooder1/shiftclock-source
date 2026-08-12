@@ -5,15 +5,12 @@
 #include "src/Wifi.hpp"
 #include "src/ble/BLE.hpp"
 
-// Initialization time (current unix timestamp)
-uint64_t init_time = 0;
-
 void setup() {
   Serial.begin(115200);
 
   initializeDisplay();
 
-  reloadSettings();
+  loadSettings();
 
   if (!initializeBLE()) {
     Serial.println("BLE initialization failed");

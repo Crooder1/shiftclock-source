@@ -141,7 +141,7 @@ void processSettingsWrite(const uint8_t (&packet)[SETTINGS_WRITE_PACKET_SIZE]) {
     }
     return;
   } else if (settingId == 0xFF && settingValue == 0xFE) {
-    if (reloadSettings()) {
+    if (loadSettings()) {
       emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Settings Write Succeeded");
     }
     return;
