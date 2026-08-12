@@ -10,7 +10,8 @@
 #define VOLUME_SETTING 4
 #define CLOCKFORM_SETTING 5
 #define MERIINDICATOR_SETTING 6
-#define TESTING_SETTING 7
+
+#define SETTINGS_COUNT 7
 
 struct SettingsEntry {
   uint8_t id;
@@ -31,4 +32,5 @@ void initSettings();
 void setSetting(uint8_t, int8_t);
 int8_t getSetting(uint8_t);
 
+bool reloadSettings();
 bool commitSettings();

@@ -26,10 +26,33 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
   },
   settings: {
     packetSize: 3,
+    readPacketSize: 8,
     offsets: {
       header: 0,
       id: 1,
       value: 2,
+    },
+    ids: {
+      timezone: 0,
+      brightness: 1,
+      seconds: 2,
+      movingDp: 3,
+      volume: 4,
+      clockForm: 5,
+      meriIndicator: 6,
+    },
+    ranges: {
+      timezone: { min: 0, max: 23 },
+      brightness: { min: 0, max: 15 },
+      seconds: { min: 0, max: 1 },
+      movingDp: { min: 0, max: 2 },
+      volume: { min: 0, max: 100 },
+      clockForm: { min: 0, max: 1 },
+      meriIndicator: { min: 0, max: 1 },
+    },
+    commands: {
+      commit: { id: 0xff, value: 0xff },
+      reload: { id: 0xff, value: 0xfe },
     },
   },
   message: {
@@ -41,5 +64,6 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
       code: 2,
       description: 3,
     },
+    infoOperationSucceeded: { type: 0, code: 0 },
   },
 } as const;

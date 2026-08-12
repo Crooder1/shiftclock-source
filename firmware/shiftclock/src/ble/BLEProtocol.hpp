@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
+#include <Arduino.h>
 
 // --- Uuids ---
 
@@ -25,7 +24,8 @@ constexpr size_t ALARM_PACKET_SIZE = 9;
 
 constexpr size_t SETTINGS_ID_OFFSET = 1;
 constexpr size_t SETTINGS_VALUE_OFFSET = 2;
-constexpr size_t SETTINGS_PACKET_SIZE = 3;
+constexpr size_t SETTINGS_WRITE_PACKET_SIZE = 3;
+constexpr size_t SETTINGS_READ_PACKET_SIZE = 8; 
 
 constexpr size_t MESSAGE_TYPE_OFFSET = 1;
 constexpr size_t MESSAGE_CODE_OFFSET = 2;
@@ -38,6 +38,8 @@ constexpr uint16_t PREFERRED_ATT_MTU = MESSAGE_PACKET_SIZE + 3;
 
 // Info
 constexpr uint8_t INFO_TAG = 0x00;
+
+constexpr uint8_t INFO_OPERATION_SUCCEEDED = 0x00;
 
 // Errors
 constexpr uint8_t ERROR_TAG = 0x01;

@@ -1,23 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   addConnectionStateListener,
   addDeviceDiscoveredListener,
+  addSettingsListener,
   connect,
   scan,
   stopScan,
   writeAlarm,
-  writeSettings,
   type Alarm,
-  type ClockSettings,
+  type ClockSettingsSnapshot,
   type ConnectionStateChangedEvent,
   type ShiftclockDevice,
 } from '../../modules/shiftclock-ble';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ActionButton } from '@/components/action-button';
+import { ClockSettingsCard } from '@/components/clock-settings-card';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -28,38 +30,6 @@ const PLACEHOLDER_ALARM: Alarm = {
   rampDurationSeconds: 0,
   volume: 0,
 };
-
-const PLACEHOLDER_SETTINGS: ClockSettings = { id: 0, value: 0 };
-
-type ActionButtonProps = {
-  accessibilityLabel: string;
-  disabled?: boolean;
-  label: string;
-  onPress: () => void;
-};
-
-function ActionButton({ accessibilityLabel, disabled, label, onPress }: ActionButtonProps) {
-  const theme = useTheme();
-
-  return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { backgroundColor: disabled ? theme.backgroundSelected : theme.text },
-        pressed && !disabled && styles.pressed,
-      ]}>
-      <ThemedText
-        type="smallBold"
-        style={{ color: disabled ? theme.textSecondary : theme.background }}>
-        {label}
-      </ThemedText>
-    </Pressable>
-  );
-}
 
 function messageFromError(cause: unknown) {
   return cause instanceof Error ? cause.message : 'BLE operation failed';
@@ -73,21 +43,25 @@ export default function ClockScreen() {
     state: 'disconnected',
     deviceId: null,
   });
+  const [clockSettings, setClockSettings] = useState<ClockSettingsSnapshot | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const discoveredDevices = useMemo(() => Object.values(devices), [devices]);
   const connected = connection.state === 'connected';
+  const clockSettingsEnabled = connected && clockSettings !== null;
 
   useEffect(() => {
     const discoveredSubscription = addDeviceDiscoveredListener((device) => {
       setDevices((currentDevices) => ({ ...currentDevices, [device.id]: device }));
     });
     const connectionSubscription = addConnectionStateListener(setConnection);
+    const settingsSubscription = addSettingsListener(setClockSettings);
 
     return () => {
       discoveredSubscription.remove();
       connectionSubscription.remove();
+      settingsSubscription.remove();
       void stopScan().catch(() => undefined);
     };
   }, []);
@@ -138,6 +112,12 @@ export default function ClockScreen() {
           </ThemedText>
           <ThemedText style={styles.capitalize}>{connectionSummary}</ThemedText>
         </ThemedView>
+
+        <ClockSettingsCard
+          confirmedSettings={clockSettings}
+          enabled={clockSettingsEnabled}
+          onActionMessage={setActionMessage}
+        />
 
         <View style={styles.section}>
           <View style={styles.sectionHeading}>
@@ -212,18 +192,6 @@ export default function ClockScreen() {
                 void runAction('alarm', () => writeAlarm(PLACEHOLDER_ALARM), 'Alarm packet sent')
               }
             />
-            <ActionButton
-              accessibilityLabel="Send settings packet"
-              disabled={!connected || pendingAction !== null}
-              label={pendingAction === 'settings' ? 'Sending…' : 'Send settings packet'}
-              onPress={() =>
-                void runAction(
-                  'settings',
-                  () => writeSettings(PLACEHOLDER_SETTINGS),
-                  'Settings packet sent'
-                )
-              }
-            />
           </ThemedView>
         </View>
 
@@ -287,17 +255,6 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     padding: Spacing.three,
     borderRadius: Spacing.four,
-  },
-  button: {
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
-  },
-  pressed: {
-    opacity: 0.75,
   },
   messageCard: {
     padding: Spacing.three,

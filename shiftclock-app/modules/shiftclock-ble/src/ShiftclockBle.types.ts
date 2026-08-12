@@ -23,6 +23,16 @@ export type ClockSettings = {
   value: number;
 };
 
+export type ClockSettingsSnapshot = {
+  timezone: number;
+  brightness: number;
+  seconds: number;
+  movingDp: number;
+  volume: number;
+  clockForm: number;
+  meriIndicator: number;
+};
+
 export type FirmwareMessage = {
   type: number;
   code: number;
@@ -32,10 +42,4 @@ export type FirmwareMessage = {
 export type ConnectionStateChangedEvent = {
   state: ConnectionState;
   deviceId: string | null;
-};
-
-export type ShiftclockBleEvents = {
-  onDeviceDiscovered: (device: ShiftclockDevice) => void;
-  onConnectionStateChanged: (event: ConnectionStateChangedEvent) => void;
-  onMessageReceived: (message: FirmwareMessage) => void;
 };

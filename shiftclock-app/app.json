@@ -26,7 +26,14 @@
     },
     "plugins": [
       "expo-router",
-      "./modules/shiftclock-ble/app.plugin.js",
+      [
+        "react-native-ble-manager",
+        {
+          "neverForLocation": true,
+          "isBleRequired": true,
+          "bluetoothAlwaysPermission": "Allow Shiftclock to find and connect to your clock."
+        }
+      ],
       [
         "expo-splash-screen",
         {

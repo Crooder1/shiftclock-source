@@ -57,5 +57,5 @@ bool isValidAlarmPacket(const uint8_t* data, size_t length) {
 }
 
 bool isValidSettingsPacket(const uint8_t* data, size_t length) {
-  return length == SETTINGS_PACKET_SIZE && hasSupportedHeader(data, length);
+  return length == SETTINGS_WRITE_PACKET_SIZE && hasSupportedHeader(data, length);
 }

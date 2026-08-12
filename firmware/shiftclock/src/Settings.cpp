@@ -12,7 +12,6 @@ struct SettingsEntry settings_array[] = {
   {VOLUME_SETTING,        "Volume",         20, 0, 100, 0x1C1D308080000000, 3, NULL, NULL},
   {CLOCKFORM_SETTING,     "ClockForm",      0,  0, 1,   0x471D058080808000, 1, NULL, NULL},
   {MERIINDICATOR_SETTING, "MeriIndicator",  1,  0, 1,   0x7715671580808000, 1, NULL, NULL},
-  {TESTING_SETTING,       "Testing",        0,  0, 0,   0x0102040810204080, 0, NULL, NULL},
 };
 
 bool initialized = false;
@@ -52,5 +51,9 @@ int8_t getSetting(uint8_t id) {
 }
 
 bool commitSettings() {
+  return false;
+}
+
+bool reloadSettings() {
   return false;
 }

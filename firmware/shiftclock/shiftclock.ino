@@ -7,7 +7,7 @@
 uint64_t init_time = 0;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   initializeDisplay();
   initSettings();

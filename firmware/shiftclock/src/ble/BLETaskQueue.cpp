@@ -1,5 +1,7 @@
 #include "BLETaskQueue.hpp"
 
+#include "ClockService.hpp"
+
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -27,11 +29,11 @@ void clockWorker(void*) {
         break;
 
       case ClockJobType::Alarm:
-        // Alarm packet handling will be connected here.
+        processAlarmWrite(job.packet.alarm);
         break;
 
       case ClockJobType::Settings:
-        // Settings packet handling will be connected here.
+        processSettingsWrite(job.packet.settings);
         break;
     }
   }
