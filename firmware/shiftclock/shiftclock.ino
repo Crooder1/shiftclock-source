@@ -12,7 +12,8 @@ void setup() {
   Serial.begin(115200);
 
   initializeDisplay();
-  initSettings();
+
+  reloadSettings();
 
   if (!initializeBLE()) {
     Serial.println("BLE initialization failed");

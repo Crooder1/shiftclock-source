@@ -3,28 +3,23 @@
 #include "Display.hpp"
 
 #include <Arduino.h>
+#include <Preferences.h>
+
+Preferences preferences;
 
 struct SettingsEntry settings_array[] = {
-  {TIMEZONE_SETTING,      "Timezone",       19, 0, 23,  0x6D1D154f80800000, 2, NULL, NULL},
-  {BRIGHTNESS_SETTING,    "Brightness",     8,  0, 15,  0x1F05308080800000, 2, onBrightnessSet, NULL},
-  {SECONDS_SETTING,       "Seconds",        0,  0, 1,   0x5B4F4E8080808000, 1, NULL, NULL},
-  {MOVINGDP_SETTING,      "MovingDP",       0,  0, 2,   0x3D67808080808000, 1, NULL, NULL},
-  {VOLUME_SETTING,        "Volume",         20, 0, 100, 0x1C1D308080000000, 3, NULL, NULL},
-  {CLOCKFORM_SETTING,     "ClockForm",      0,  0, 1,   0x471D058080808000, 1, NULL, NULL},
-  {MERIINDICATOR_SETTING, "MeriIndicator",  1,  0, 1,   0x7715671580808000, 1, NULL, NULL},
+  {TIMEZONE_SETTING,      "Timezone",      "tz",  19, 0, 23,  0x6D1D154f80800000, 2, NULL, NULL},
+  {BRIGHTNESS_SETTING,    "Brightness",    "bri", 8,  0, 15,  0x1F05308080800000, 2, onBrightnessSet, NULL},
+  {SECONDS_SETTING,       "Seconds",       "sec", 0,  0, 1,   0x5B4F4E8080808000, 1, NULL, NULL},
+  {MOVINGDP_SETTING,      "MovingDP",      "dp",  0,  0, 2,   0x3D67808080808000, 1, NULL, NULL},
+  {VOLUME_SETTING,        "Volume",        "vol", 20, 0, 100, 0x1C1D308080000000, 3, NULL, NULL},
+  {CLOCKFORM_SETTING,     "ClockForm",     "24h", 0,  0, 1,   0x471D058080808000, 1, NULL, NULL},
+  {MERIINDICATOR_SETTING, "MeriIndicator", "mer", 1,  0, 1,   0x7715671580808000, 1, NULL, NULL},
 };
-
-bool initialized = false;
-
-void initSettings() {
-  initialized = true;
-}
 
 void setSetting(uint8_t id, int8_t val) {
 
-  // if (!initialized) return;
-
-  struct SettingsEntry entry = settings_array[id];
+  SettingsEntry& entry = settings_array[id];
 
   // Bounds check
   if (val < entry.min_value) val = entry.min_value;
@@ -41,9 +36,7 @@ void setSetting(uint8_t id, int8_t val) {
 
 int8_t getSetting(uint8_t id) {
 
-  // if (!initialized) return 0;
-
-  struct SettingsEntry entry = settings_array[id];
+  const SettingsEntry& entry = settings_array[id];
 
   if (entry.onGet != NULL) entry.onGet(entry.value);
 
@@ -51,9 +44,55 @@ int8_t getSetting(uint8_t id) {
 }
 
 bool commitSettings() {
-  return false;
+
+  if (!preferences.begin(SETTINGS_PREFS_NAMESPACE, false)) {
+    return false;
+  }
+
+  for (uint8_t x = 0; x < SETTINGS_COUNT; x++) {
+
+    const SettingsEntry& entry = settings_array[x];
+    std::string key = entry.key;
+    uint8_t value = entry.value;
+
+    if (preferences.isKey(key.c_str())) {
+      uint8_t oldValue = preferences.getUChar(key.c_str(), value);
+
+      if (value == oldValue) {
+        continue;
+      }
+    }
+
+    if (!preferences.putUChar(key.c_str(), value)) {
+      preferences.end();
+      return false;
+    }
+  }
+
+  Serial.println("Settings Committed");
+
+  preferences.end();
+  return true;
 }
 
 bool reloadSettings() {
-  return false;
+
+  if (!preferences.begin(SETTINGS_PREFS_NAMESPACE, true)) {
+    return false;
+  }
+
+  for (uint8_t x = 0; x < SETTINGS_COUNT; x++) {
+
+    SettingsEntry& entry = settings_array[x];
+    uint8_t id = entry.id;
+    std::string key = entry.key;
+
+    uint8_t value = preferences.getUChar(key.c_str(), entry.value);
+    setSetting(id, value);
+  }
+
+  Serial.println("Settings Reloaded");
+
+  preferences.end();
+  return true;
 }

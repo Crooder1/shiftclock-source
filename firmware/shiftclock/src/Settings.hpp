@@ -13,9 +13,12 @@
 
 #define SETTINGS_COUNT 7
 
+#define SETTINGS_PREFS_NAMESPACE "clock"
+
 struct SettingsEntry {
   uint8_t id;
   std::string name;
+  std::string key;
   int8_t value; // also serves as default value
   uint8_t min_value; // both inclusive
   uint8_t max_value;
@@ -26,8 +29,6 @@ struct SettingsEntry {
 };
 
 extern struct SettingsEntry settings_array[];
-
-void initSettings();
 
 void setSetting(uint8_t, int8_t);
 int8_t getSetting(uint8_t);
