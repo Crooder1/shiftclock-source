@@ -1,6 +1,8 @@
 #include <string>
+#include <time.h>
 #include "src/Display.hpp"
 #include "src/Settings.hpp"
+#include "src/Wifi.hpp"
 #include "src/ble/BLE.hpp"
 
 // Initialization time (current unix timestamp)
@@ -21,17 +23,19 @@ void loop() {
 
   // In loop because it crashes otherwise
   // Something about watchdog and not blocking setup()
-  //TODO: Needs to be BLE instead
-  // if (!wifi_initialized) {
-  //   displaySymbols(&lc, CONNECTING_SYMBOL);
-  //   initWifi();
-  //   return;
-  // }
+  if (!wifi_initialized) {
+    displaySymbols(CONNECTING_SYMBOL);
+    initWifi();
+    displaySymbols(SYNCING_SYMBOL);
+    initTime();
+    return;
+  }
 
   uint64_t timezoneOffset = getSetting(TIMEZONE_SETTING);
-  uint64_t millisTime = millis() + init_time + (timezoneOffset * 3600000L); /*1000 * 60 * 60  one hour */
+  time_t now = time(nullptr);
+  uint64_t millisTime = ((uint64_t)now * 1000ULL)+ (timezoneOffset * 3600000LL);
+
   displayTime(millisTime, getSetting(MOVINGDP_SETTING), getSetting(MERIINDICATOR_SETTING), getSetting(SECONDS_SETTING), getSetting(CLOCKFORM_SETTING));
 
-  // Small delay
   delay(1);
 }

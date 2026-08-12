@@ -7,6 +7,9 @@ build/
 # Isolated implementation worktrees
 .worktrees/
 
+# Local secrets
+Generated.hpp
+
 # AI Stuff
 superpowers/
 AGENTS.md

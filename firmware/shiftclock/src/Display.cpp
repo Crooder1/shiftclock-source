@@ -23,6 +23,8 @@ void initializeDisplay() {
   lc.begin();
   lc.control(MD_MAX72XX::INTENSITY, 8);   // brightness 0–15
   lc.clear();
+
+  displayInitialized = true;
 }
 
 void deinitializeDisplay() {
@@ -30,6 +32,8 @@ void deinitializeDisplay() {
   if (!displayInitialized) return
 
   lc.clear();
+
+  displayInitialized = false;
 }
 
 void displayDigit(uint8_t index, uint8_t digit, bool dp) {
@@ -45,7 +49,7 @@ void displayTime(uint64_t millis, uint8_t dp_mode, bool meri_en, bool seconds_en
   int hours = (millis / (60 * 60 * 1000L)) % 24;
 
   // This is needed before the 12 hours formatting
-  uint32_t meridiem_symbol = (hours > 12) ? PM_SYMBOL : AM_SYMBOL;
+  uint32_t meridiem_symbol = (hours >= 12) ? PM_SYMBOL : AM_SYMBOL;
 
   if (twelve_en && hours > 12) hours = hours % 12;
 
