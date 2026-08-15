@@ -665,9 +665,10 @@ describe('ShiftclockBleController', () => {
     const alarmWrite = controller.writeAlarm({
       daysActive: 1,
       secondsOfDay: 2,
-      flashUntilOff: false,
+      tuneId: 0,
       rampDurationSeconds: 3,
       volume: 4,
+      autoDisableSeconds: 5,
     });
     const settingsWrite = controller.writeSettings({ id: 5, value: 1 });
     await Promise.resolve();
@@ -684,8 +685,8 @@ describe('ShiftclockBleController', () => {
       'clock-1',
       '8984ff44-0000-4291-868b-2a44c36ed7e8',
       '8984ff44-0001-4291-868b-2a44c36ed7e8',
-      [0, 1, 2, 0, 0, 0, 3, 0, 4],
-      9
+      [0, 1, 0, 1, 2, 0, 0, 0, 3, 0, 4, 5, 0],
+      13
     );
     expect(fake.manager.write).toHaveBeenNthCalledWith(
       2,

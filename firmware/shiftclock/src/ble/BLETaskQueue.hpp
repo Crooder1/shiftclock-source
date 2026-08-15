@@ -21,7 +21,7 @@ enum class ClockJobType : uint8_t {
 struct ClockJob {
   ClockJobType type;
   union {
-    uint8_t alarm[ALARM_PACKET_SIZE];
+    uint8_t alarm[ALARM_WRITE_PACKET_SIZE];
     uint8_t settings[SETTINGS_WRITE_PACKET_SIZE];
   } packet;
 };

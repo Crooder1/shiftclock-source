@@ -1,14 +1,14 @@
 #include "Settings.hpp"
 
 #include "Display.hpp"
+#include "Wifi.hpp"
 
-#include <Arduino.h>
 #include <Preferences.h>
 
-Preferences preferences;
+Preferences settings_preferences;
 
-struct SettingsEntry settings_array[] = {
-  {TIMEZONE_SETTING,      "Timezone",      "tz",  19, 0, 23,  0x6D1D154f80800000, 2, NULL, NULL},
+SettingsEntry settings_array[] = {
+  {TIMEZONE_SETTING,      "Timezone",      "tz",  19, -12, 11,  0x6D1D154f80800000, 2, setTimezoneOffset, NULL},
   {BRIGHTNESS_SETTING,    "Brightness",    "bri", 8,  0, 15,  0x1F05308080800000, 2, onBrightnessSet, NULL},
   {SECONDS_SETTING,       "Seconds",       "sec", 0,  0, 1,   0x5B4F4E8080808000, 1, NULL, NULL},
   {MOVINGDP_SETTING,      "MovingDP",      "dp",  0,  0, 2,   0x3D67808080808000, 1, NULL, NULL},
@@ -45,7 +45,7 @@ int8_t getSetting(uint8_t id) {
 
 bool commitSettings() {
 
-  if (!preferences.begin(SETTINGS_PREFS_NAMESPACE, false)) {
+  if (!settings_preferences.begin(SETTINGS_PREFS_NAMESPACE, false)) {
     return false;
   }
 
@@ -55,29 +55,29 @@ bool commitSettings() {
     std::string key = entry.key;
     uint8_t value = entry.value;
 
-    if (preferences.isKey(key.c_str())) {
-      uint8_t oldValue = preferences.getUChar(key.c_str(), value);
+    if (settings_preferences.isKey(key.c_str())) {
+      uint8_t oldValue = settings_preferences.getUChar(key.c_str(), value);
 
       if (value == oldValue) {
         continue;
       }
     }
 
-    if (!preferences.putUChar(key.c_str(), value)) {
-      preferences.end();
+    if (!settings_preferences.putUChar(key.c_str(), value)) {
+      settings_preferences.end();
       return false;
     }
   }
 
   Serial.println("Settings Committed");
 
-  preferences.end();
+  settings_preferences.end();
   return true;
 }
 
 bool loadSettings() {
 
-  if (!preferences.begin(SETTINGS_PREFS_NAMESPACE, true)) {
+  if (!settings_preferences.begin(SETTINGS_PREFS_NAMESPACE, true)) {
     return false;
   }
 
@@ -87,12 +87,12 @@ bool loadSettings() {
     uint8_t id = entry.id;
     std::string key = entry.key;
 
-    uint8_t value = preferences.getUChar(key.c_str(), entry.value);
+    uint8_t value = settings_preferences.getUChar(key.c_str(), entry.value);
     setSetting(id, value);
   }
 
   Serial.println("Settings Reloaded");
 
-  preferences.end();
+  settings_preferences.end();
   return true;
 }

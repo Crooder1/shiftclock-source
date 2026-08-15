@@ -10,6 +10,11 @@ build/
 # Local secrets
 Generated.hpp
 
+# Alarm creation intermediaries
+*.wav
+*.pcm
+*.raw
+
 # AI Stuff
 superpowers/
 AGENTS.md

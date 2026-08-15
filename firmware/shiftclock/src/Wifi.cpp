@@ -1,5 +1,7 @@
 #include "Wifi.hpp"
 
+#include "Settings.hpp"
+
 #include <WiFi.h>
 #include <time.h>
 
@@ -51,5 +53,17 @@ void initTime() {
   Serial.println();
   Serial.printf("Current Unix Time: %llu\n", (uint64_t)now);
 
+  setTimezoneOffset(getSetting(TIMEZONE_SETTING));
+
   time_configured = true;
+}
+
+void setTimezoneOffset(int8_t utcOffsetHours) {
+  char tz[16];
+
+  // POSIX TZ signs are reversed
+  snprintf(tz, sizeof(tz), "UTC%+d", -utcOffsetHours);
+
+  setenv("TZ", tz, 1);
+  tzset();
 }

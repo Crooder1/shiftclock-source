@@ -31,8 +31,9 @@ UUID, packet-size, offset, and range constants.
   connection ready.
 - Replays the active connection's confirmed settings through
   `addSettingsListener`.
-- Encodes Alarm and Settings packets and sends them with response in one ordered
-  write stream.
+- Encodes `writeAlarm` as a 13-byte Add command containing Tune ID and an
+  auto-disable duration of at most 3,600 seconds. Alarm and Settings packets
+  are sent with response in one ordered write stream.
 - Waits up to one second for `INFO_OPERATION_SUCCEEDED` after every Settings
   write.
 - Sends Commit (`0xFFFF`) and Reload (`0xFFFE`); Reload rereads Settings only

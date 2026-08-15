@@ -43,10 +43,20 @@ void displayDigit(uint8_t index, uint8_t digit, bool dp) {
 
 // TODO - option for hour formatting and AM/PM
 void displayTime(uint64_t millis, uint8_t dp_mode, bool meri_en, bool seconds_en, bool twelve_en) {
+
+  int8_t dp_mode = getSetting(MOVINGDP_SETTING);
+  int8_t meri_en = getSetting(MERIINDICATOR_SETTING);
+  int8_t seconds_en = getSetting(SECONDS_SETTING);
+  int8_t twelve_en = getSetting(CLOCKFORM_SETTING);
   
-  int seconds = (millis / 1000L) % 60;
-  int minutes = (millis / (60 * 1000L)) % 60;
-  int hours = (millis / (60 * 60 * 1000L)) % 24;
+  time_t now = time(nulltpr);
+
+  struct tm local;
+  localtime_r(&now, &local);
+
+  // int seconds = (millis / 1000L) % 60;
+  // int minutes = (millis / (60 * 1000L)) % 60;
+  // int hours = (millis / (60 * 60 * 1000L)) % 24;
 
   // This is needed before the 12 hours formatting
   uint32_t meridiem_symbol = (hours >= 12) ? PM_SYMBOL : AM_SYMBOL;
@@ -55,13 +65,13 @@ void displayTime(uint64_t millis, uint8_t dp_mode, bool meri_en, bool seconds_en
 
   uint64_t symbol = 0;
 
-  symbol = (symbol + numberToSymbol(hours, 2));
+  symbol = (symbol + numberToSymbol(local.tm_hour, 2));
   symbol = symbol << 16;
-  symbol = (symbol + numberToSymbol(minutes, 2));
+  symbol = (symbol + numberToSymbol(local.tm_min, 2));
 
   if (seconds_en) {
     symbol = symbol << 16;
-    symbol = (symbol + numberToSymbol(seconds, 2));
+    symbol = (symbol + numberToSymbol(local.tm_sec, 2));
   }
 
   if (meri_en) {
@@ -99,9 +109,10 @@ void displayNumber(uint32_t num) {
   }
 }
 
-void onBrightnessSet(uint8_t brightness) {
+void onBrightnessSet(int8_t brightness) {
 
   if (!displayInitialized) return;
+  if (brightness < 0) return;
 
   lc.control(MD_MAX72XX::INTENSITY, brightness);
 }

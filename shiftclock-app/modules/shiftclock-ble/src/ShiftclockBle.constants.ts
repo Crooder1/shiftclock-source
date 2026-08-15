@@ -8,20 +8,32 @@ export const SHIFTCLOCK_BLE_UUIDS = {
 export const SHIFTCLOCK_BLE_PROTOCOL = {
   header: 0,
   alarm: {
-    packetSize: 9,
+    packetSize: 13,
+    readPacketSize: 12,
     offsets: {
       header: 0,
-      daysActive: 1,
-      secondsOfDay: 2,
-      flashUntilOff: 5,
-      rampDurationSeconds: 6,
-      volume: 8,
+      command: 1,
+      id: 2,
+      daysActive: 3,
+      secondsOfDay: 4,
+      tuneId: 7,
+      rampDurationSeconds: 8,
+      volume: 10,
+      autoDisableSeconds: 11,
     },
     ranges: {
       daysActive: { min: 0, max: 0x7f },
       secondsOfDay: { min: 0, max: 86_399 },
+      tuneId: { min: 0, max: 31 },
       rampDurationSeconds: { min: 0, max: 600 },
       volume: { min: 0, max: 100 },
+      autoDisableSeconds: { min: 0, max: 3600 },
+    },
+    commands: {
+      read: 0,
+      add: 1,
+      modify: 2,
+      remove: 3,
     },
   },
   settings: {

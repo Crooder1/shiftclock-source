@@ -29,11 +29,12 @@ void loop() {
     return;
   }
 
-  uint64_t timezoneOffset = getSetting(TIMEZONE_SETTING);
-  time_t now = time(nullptr);
-  uint64_t millisTime = ((uint64_t)now * 1000ULL)+ (timezoneOffset * 3600000LL);
+  // uint64_t timezoneOffset = getSetting(TIMEZONE_SETTING);
+  // time_t now = time(nullptr);
+  // uint64_t millisTime = ((uint64_t)now * 1000ULL)+ (timezoneOffset * 3600000LL);
 
-  displayTime(millisTime, getSetting(MOVINGDP_SETTING), getSetting(MERIINDICATOR_SETTING), getSetting(SECONDS_SETTING), getSetting(CLOCKFORM_SETTING));
+  //displayTime(millisTime, getSetting(MOVINGDP_SETTING), getSetting(MERIINDICATOR_SETTING), getSetting(SECONDS_SETTING), getSetting(CLOCKFORM_SETTING));
+  displayTime();
 
   delay(1);
 }

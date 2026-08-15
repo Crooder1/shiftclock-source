@@ -13,3 +13,4 @@ void initWifi();
 void stopWifi();
 
 void initTime();
+void setTimezoneOffset(int8_t utcOffsetHours);

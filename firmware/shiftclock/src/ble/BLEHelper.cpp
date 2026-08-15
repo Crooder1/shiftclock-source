@@ -39,23 +39,3 @@ uint32_t readInt(
   }
   return value;
 }
-
-bool isValidAlarmPacket(const uint8_t* data, size_t length) {
-  if (length != ALARM_PACKET_SIZE || !hasSupportedHeader(data, length)) {
-    return false;
-  }
-
-  return readByte(data, length, ALARM_DAYS_ACTIVE_OFFSET)
-          <= ALARM_DAYS_ACTIVE_MAX
-      && readInt(data, length, ALARM_SECONDS_OF_DAY_OFFSET, 3)
-          <= ALARM_SECONDS_OF_DAY_MAX
-      && readByte(data, length, ALARM_FLASH_UNTIL_OFF_OFFSET)
-          <= ALARM_FLASH_UNTIL_OFF_MAX
-      && readInt(data, length, ALARM_RAMP_DURATION_OFFSET, 2)
-          <= ALARM_RAMP_DURATION_SECONDS_MAX
-      && readByte(data, length, ALARM_VOLUME_OFFSET) <= ALARM_VOLUME_MAX;
-}
-
-bool isValidSettingsPacket(const uint8_t* data, size_t length) {
-  return length == SETTINGS_WRITE_PACKET_SIZE && hasSupportedHeader(data, length);
-}

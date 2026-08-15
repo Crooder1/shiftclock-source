@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../alarm/Alarm.hpp"
+
 #include <Arduino.h>
 
 // --- Uuids ---
@@ -15,12 +17,16 @@ constexpr uint8_t PROTOCOL_HEADER = 0;
 
 constexpr size_t HEADER_OFFSET = 0;
 
-constexpr size_t ALARM_DAYS_ACTIVE_OFFSET = 1;
-constexpr size_t ALARM_SECONDS_OF_DAY_OFFSET = 2;
-constexpr size_t ALARM_FLASH_UNTIL_OFF_OFFSET = 5;
-constexpr size_t ALARM_RAMP_DURATION_OFFSET = 6;
-constexpr size_t ALARM_VOLUME_OFFSET = 8;
-constexpr size_t ALARM_PACKET_SIZE = 9;
+constexpr size_t ALARM_COMMAND_OFFSET = 1;
+constexpr size_t ALARM_ID_OFFSET = 2;
+constexpr size_t ALARM_DAYS_ACTIVE_OFFSET = 3;
+constexpr size_t ALARM_SECONDS_OF_DAY_OFFSET = 4;
+constexpr size_t ALARM_TUNE_ID_OFFSET = 7;
+constexpr size_t ALARM_RAMP_DURATION_OFFSET = 8;
+constexpr size_t ALARM_VOLUME_OFFSET = 10;
+constexpr size_t ALARM_AUTO_DISABLE_SECONDS_OFFSET = 11;
+constexpr size_t ALARM_WRITE_PACKET_SIZE = PACKED_ALARM_SIZE + 3;
+constexpr size_t ALARM_READ_PACKET_SIZE = PACKED_ALARM_SIZE + 2;
 
 constexpr size_t SETTINGS_ID_OFFSET = 1;
 constexpr size_t SETTINGS_VALUE_OFFSET = 2;
@@ -33,6 +39,12 @@ constexpr size_t MESSAGE_DESCRIPTION_OFFSET = 3;
 constexpr size_t MESSAGE_DESCRIPTION_SIZE = 40;
 constexpr size_t MESSAGE_PACKET_SIZE = 43;
 constexpr uint16_t PREFERRED_ATT_MTU = MESSAGE_PACKET_SIZE + 3;
+
+// --- Alarm Commands ---
+constexpr uint8_t ALARM_READ_COMMAND = 0x0;
+constexpr uint8_t ALARM_ADD_COMMAND = 0x1;
+constexpr uint8_t ALARM_MODIFY_COMMAND = 0x2;
+constexpr uint8_t ALARM_REMOVE_COMMAND = 0x3;
 
 // --- Messages ---
 

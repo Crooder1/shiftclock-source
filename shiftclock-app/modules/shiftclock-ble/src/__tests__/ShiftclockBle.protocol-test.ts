@@ -14,18 +14,35 @@ describe('Shiftclock BLE protocol', () => {
       encodeAlarm({
         daysActive: 0x55,
         secondsOfDay: 0x01_02_03,
-        flashUntilOff: true,
+        tuneId: 7,
         rampDurationSeconds: 0x01f4,
         volume: 87,
+        autoDisableSeconds: 3600,
       })
-    ).toEqual([0x00, 0x55, 0x03, 0x02, 0x01, 0x01, 0xf4, 0x01, 87]);
+    ).toEqual([
+      0x00,
+      0x01,
+      0x00,
+      0x55,
+      0x03,
+      0x02,
+      0x01,
+      0x07,
+      0xf4,
+      0x01,
+      87,
+      0x10,
+      0x0e,
+    ]);
   });
 
   test.each([
-    ['daysActive', { daysActive: 0x80, secondsOfDay: 0, flashUntilOff: false, rampDurationSeconds: 0, volume: 0 }],
-    ['secondsOfDay', { daysActive: 0, secondsOfDay: 86_400, flashUntilOff: false, rampDurationSeconds: 0, volume: 0 }],
-    ['rampDurationSeconds', { daysActive: 0, secondsOfDay: 0, flashUntilOff: false, rampDurationSeconds: 601, volume: 0 }],
-    ['volume', { daysActive: 0, secondsOfDay: 0, flashUntilOff: false, rampDurationSeconds: 0, volume: 101 }],
+    ['daysActive', { daysActive: 0x80, secondsOfDay: 0, tuneId: 0, rampDurationSeconds: 0, volume: 0, autoDisableSeconds: 0 }],
+    ['secondsOfDay', { daysActive: 0, secondsOfDay: 86_400, tuneId: 0, rampDurationSeconds: 0, volume: 0, autoDisableSeconds: 0 }],
+    ['tuneId', { daysActive: 0, secondsOfDay: 0, tuneId: 32, rampDurationSeconds: 0, volume: 0, autoDisableSeconds: 0 }],
+    ['rampDurationSeconds', { daysActive: 0, secondsOfDay: 0, tuneId: 0, rampDurationSeconds: 601, volume: 0, autoDisableSeconds: 0 }],
+    ['volume', { daysActive: 0, secondsOfDay: 0, tuneId: 0, rampDurationSeconds: 0, volume: 101, autoDisableSeconds: 0 }],
+    ['autoDisableSeconds', { daysActive: 0, secondsOfDay: 0, tuneId: 0, rampDurationSeconds: 0, volume: 0, autoDisableSeconds: 3601 }],
   ])('rejects an invalid Alarm %s', (_field, alarm) => {
     expect(() => encodeAlarm(alarm)).toThrow('Invalid Alarm');
   });

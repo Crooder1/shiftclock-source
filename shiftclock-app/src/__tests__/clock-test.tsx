@@ -142,9 +142,10 @@ describe('ClockScreen', () => {
       expect(writeAlarm).toHaveBeenCalledWith({
         daysActive: 0,
         secondsOfDay: 0,
-        flashUntilOff: false,
+        tuneId: 0,
         rampDurationSeconds: 0,
         volume: 0,
+        autoDisableSeconds: 0,
       })
     );
     await screen.findByText('Alarm packet sent');

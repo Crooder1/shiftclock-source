@@ -26,9 +26,10 @@ import { useTheme } from '@/hooks/use-theme';
 const PLACEHOLDER_ALARM: Alarm = {
   daysActive: 0,
   secondsOfDay: 0,
-  flashUntilOff: false,
+  tuneId: 0,
   rampDurationSeconds: 0,
   volume: 0,
+  autoDisableSeconds: 0,
 };
 
 function messageFromError(cause: unknown) {

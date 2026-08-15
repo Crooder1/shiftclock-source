@@ -13,9 +13,10 @@ export type ShiftclockDevice = {
 export type Alarm = {
   daysActive: number;
   secondsOfDay: number;
-  flashUntilOff: boolean;
+  tuneId: number;
   rampDurationSeconds: number;
   volume: number;
+  autoDisableSeconds: number;
 };
 
 export type ClockSettings = {

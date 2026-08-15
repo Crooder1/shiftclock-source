@@ -16,26 +16,36 @@ export function encodeAlarm(alarm: Alarm): number[] {
   if (
     !isIntegerInRange(alarm.daysActive, ranges.daysActive.min, ranges.daysActive.max) ||
     !isIntegerInRange(alarm.secondsOfDay, ranges.secondsOfDay.min, ranges.secondsOfDay.max) ||
+    !isIntegerInRange(alarm.tuneId, ranges.tuneId.min, ranges.tuneId.max) ||
     !isIntegerInRange(
       alarm.rampDurationSeconds,
       ranges.rampDurationSeconds.min,
       ranges.rampDurationSeconds.max
     ) ||
-    !isIntegerInRange(alarm.volume, ranges.volume.min, ranges.volume.max)
+    !isIntegerInRange(alarm.volume, ranges.volume.min, ranges.volume.max) ||
+    !isIntegerInRange(
+      alarm.autoDisableSeconds,
+      ranges.autoDisableSeconds.min,
+      ranges.autoDisableSeconds.max
+    )
   ) {
     throw new Error('Invalid Alarm packet fields');
   }
 
   return [
     SHIFTCLOCK_BLE_PROTOCOL.header,
+    SHIFTCLOCK_BLE_PROTOCOL.alarm.commands.add,
+    0,
     alarm.daysActive,
     alarm.secondsOfDay & 0xff,
     (alarm.secondsOfDay >>> 8) & 0xff,
     (alarm.secondsOfDay >>> 16) & 0xff,
-    alarm.flashUntilOff ? 1 : 0,
+    alarm.tuneId,
     alarm.rampDurationSeconds & 0xff,
     (alarm.rampDurationSeconds >>> 8) & 0xff,
     alarm.volume,
+    alarm.autoDisableSeconds & 0xff,
+    (alarm.autoDisableSeconds >>> 8) & 0xff,
   ];
 }
 

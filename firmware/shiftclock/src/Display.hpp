@@ -82,7 +82,7 @@ extern const uint8_t number_dp_symbols[];
 void initializeDisplay();
 void deinitializeDisplay();
 
-void displayTime(uint64_t, uint8_t, bool, bool, bool);
+void displayTime();
 void displayDigit(uint8_t, uint8_t, bool);
 void displaySymbols(uint64_t);
 void displayNumber(uint32_t);
