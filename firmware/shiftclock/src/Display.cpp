@@ -1,6 +1,9 @@
 #include "Display.hpp"
 
+#include "Settings.hpp"
+
 #include <Arduino.h>
+#include <sys/time.h>
 
 const uint8_t number_symbols[] = {ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE};
 const uint8_t number_dp_symbols[] = {ZERO_DP, ONE_DP, TWO_DP, THREE_DP, FOUR_DP, FIVE_DP, SIX_DP, SEVEN_DP, EIGHT_DP, NINE_DP};
@@ -42,30 +45,33 @@ void displayDigit(uint8_t index, uint8_t digit, bool dp) {
 }
 
 // TODO - option for hour formatting and AM/PM
-void displayTime(uint64_t millis, uint8_t dp_mode, bool meri_en, bool seconds_en, bool twelve_en) {
+void displayTime() {
 
   int8_t dp_mode = getSetting(MOVINGDP_SETTING);
   int8_t meri_en = getSetting(MERIINDICATOR_SETTING);
   int8_t seconds_en = getSetting(SECONDS_SETTING);
   int8_t twelve_en = getSetting(CLOCKFORM_SETTING);
   
-  time_t now = time(nulltpr);
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+
+  uint64_t millisSinceEpoch = (uint64_t)tv.tv_sec * 1000ULL + tv.tv_usec / 1000ULL;
+
+  time_t now = time(nullptr);
 
   struct tm local;
   localtime_r(&now, &local);
 
-  // int seconds = (millis / 1000L) % 60;
-  // int minutes = (millis / (60 * 1000L)) % 60;
-  // int hours = (millis / (60 * 60 * 1000L)) % 24;
-
   // This is needed before the 12 hours formatting
-  uint32_t meridiem_symbol = (hours >= 12) ? PM_SYMBOL : AM_SYMBOL;
-
-  if (twelve_en && hours > 12) hours = hours % 12;
+  uint32_t meridiem_symbol = (local.tm_hour >= 12) ? PM_SYMBOL : AM_SYMBOL;
 
   uint64_t symbol = 0;
 
-  symbol = (symbol + numberToSymbol(local.tm_hour, 2));
+  if (twelve_en) {
+    symbol = (symbol + numberToSymbol(local.tm_hour % 12, 2));
+  } else {
+    symbol = (symbol + numberToSymbol(local.tm_hour, 2));
+  }
   symbol = symbol << 16;
   symbol = (symbol + numberToSymbol(local.tm_min, 2));
 
@@ -79,7 +85,7 @@ void displayTime(uint64_t millis, uint8_t dp_mode, bool meri_en, bool seconds_en
     symbol = (symbol + meridiem_symbol);
   }
 
-  symbol += dpModeToSymbol(dp_mode, millis);
+  symbol += dpModeToSymbol(dp_mode, millisSinceEpoch);
 
   displaySymbols(symbol);
 }

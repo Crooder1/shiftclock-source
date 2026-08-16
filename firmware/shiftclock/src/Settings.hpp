@@ -22,8 +22,6 @@ struct SettingsEntry {
   int8_t value; // also serves as default value
   int8_t min_value; // both inclusive
   int8_t max_value;
-  uint64_t base_symbol;
-  uint8_t value_length;
   void (*onSet)(int8_t); // Nullable
   void (*onGet)(int8_t); // Nullable
 };

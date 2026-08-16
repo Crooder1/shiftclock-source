@@ -87,7 +87,7 @@ void displayDigit(uint8_t, uint8_t, bool);
 void displaySymbols(uint64_t);
 void displayNumber(uint32_t);
 
-void onBrightnessSet(uint8_t);
+void onBrightnessSet(int8_t);
 
 // helpers
 uint64_t numberToSymbol(uint32_t, uint8_t);

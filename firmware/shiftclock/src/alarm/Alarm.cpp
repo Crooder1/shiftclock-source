@@ -4,10 +4,22 @@
 #include <cstring>
 #include <vector>
 #include <time.h>
+#include <ESP_I2S.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+namespace {
 
 Preferences alarm_preferences;
 
+I2SClass I2S;
+bool i2SInitialized = false;
+
 std::vector<Alarm> alarms;
+
+TaskHandle_t alarmTask = nullptr;
+
+} // namespace
 
 Alarm::Alarm() : Alarm(0, 0, 0, 0, 0, 0) {}
 
@@ -50,18 +62,6 @@ void Alarm::pack(uint8_t(&packet)[PACKED_ALARM_SIZE]) const {
   packet[7] = this->volume;
   packet[8] = (this->auto_disable_seconds & 0xFF);
   packet[9] = ((this->auto_disable_seconds >> 8) & 0xFF);
-}
-
-bool Alarm::startPlayingTune() {
-
-}
-
-bool Alarm::stopPlayingTune() {
-
-}
-
-bool Alarm::isPlaying() const {
-  return this->playing;
 }
 
 void packAlarm(const Alarm& alarm, uint8_t(&packet)[PACKED_ALARM_SIZE]) {
@@ -139,13 +139,13 @@ bool removeAlarm(uint8_t id) {
   return true;
 }
 
-void alarmTask(void* parameter) {
+void alarmWorker(void* parameter) {
 
   time_t now = time(nullptr);
   struct tm local;
   localtime_r(&now, &local);
 
-  uint32_t lastDaySeconds = local.tm_sec;
+  uint32_t lastDaySeconds = local.tm_sec + local.tm_min * 60UL + local.tm_hour * 3600UL;
 
   Alarm* activeAlarm = nullptr;
   uint32_t alarmActiveEpochSeconds = 0;
@@ -162,30 +162,99 @@ void alarmTask(void* parameter) {
 
     if (activeAlarm != nullptr) {
       if (epochSeconds - alarmActiveEpochSeconds > activeAlarm->auto_disable_seconds) {
-        activeAlarm->stopPlayingTune();
         activeAlarm = nullptr;
         alarmActiveEpochSeconds = 0;
+      } else if (i2SInitialized) {
+        
+        AlarmTune tune;
+        if (getTune(tune, activeAlarm->tune_id)) {
+          writeAudio(tune.data, tune.data_length);
+        }
       }
     }
 
-    for (Alarm alarm : alarms) {
+    for (Alarm& alarm : alarms) {
 
-      // alarm.isPlaying() should never br reached.
-      if (activeAlarm != nullptr || alarm.isPlaying()) break;
+      if (activeAlarm != nullptr) break;
 
       bool alarmActive = ((alarm.days_active >> dayOfWeek) & 1) == 1;
       if (!alarmActive) continue;
 
       if (lastDaySeconds <= alarm.alarm_seconds && alarm.alarm_seconds <= daySeconds) {
-        alarm.startPlayingTune();
         activeAlarm = &alarm;
         alarmActiveEpochSeconds = epochSeconds;
       }
     }
 
+    lastDaySeconds = daySeconds;
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 
+}
+
+bool initializeAlarms() {
+
+  if (!loadAlarms()) {
+    return false;
+  }
+
+  if (!initializeI2S()) {
+    return false;
+  }
+
+  if (alarmTask != nullptr) return true;
+
+  if (xTaskCreate(
+      alarmWorker,
+      "alarm_worker",
+      ALARM_STACK_DEPTH,
+      nullptr,
+      1,
+      &alarmTask
+  ) != pdPASS) {
+    Serial.println("Alarm task creation failed");
+    return false;
+  }
+
+  return true;
+}
+
+bool initializeI2S() {
+
+  if (i2SInitialized) return true;
+
+  I2S.setPins(BCLK_PIN, WS_PIN, DOUT_PIN);
+
+  if (!I2S.begin(
+      I2S_MODE_STD,
+      16000,
+      I2S_DATA_BIT_WIDTH_16BIT,
+      I2S_SLOT_MODE_MONO
+  )) return false;
+
+  i2SInitialized = true;
+  return true;
+}
+
+void writeAudio(const uint8_t* audio, size_t audioLength) {
+
+  size_t offset = 0;
+
+  while(offset < audioLength) {
+
+    size_t count = min(AUDIO_CHUNK_SIZE, audioLength - offset);
+
+    size_t written = I2S.write(
+      audio + offset,
+      count
+    );
+
+    if (written == 0) {
+      break;
+    }
+
+    offset += written;
+  }
 }
 
 bool commitAlarms() {
@@ -224,14 +293,21 @@ bool loadAlarms() {
     return false;
   }
 
-  size_t bufferSize = alarm_preferences.getBytesLength(ALARM_PREFS_KEY);
-
-  if (bufferSize % PACKED_ALARM_SIZE != 0) {
+  if (!alarm_preferences.isKey(ALARM_PREFS_KEY)) {
     alarm_preferences.end();
-    return false;
+    Serial.println("Alarms Never Stored. Skipping...");
+    return true;
   }
 
+  size_t bufferSize = alarm_preferences.getBytesLength(ALARM_PREFS_KEY);
+
   if (bufferSize == 0) {
+    alarm_preferences.end();
+    Serial.println("No Alarms Stored. Skipping...");
+    return true;
+  }
+
+  if (bufferSize % PACKED_ALARM_SIZE != 0) {
     alarm_preferences.end();
     return false;
   }
@@ -252,6 +328,8 @@ bool loadAlarms() {
     return false;
   }
 
+  alarms.clear();
+
   for (size_t x = 0; x < alarmCount; x++) {
 
     uint8_t alarmBuffer[PACKED_ALARM_SIZE];
@@ -259,9 +337,10 @@ bool loadAlarms() {
 
     Alarm unpacked = unpackAlarm(alarmBuffer);
 
-    if (!modifyAlarm(unpacked, x)) {
+    if (!addAlarm(unpacked)) {
       return false;
     }
+
   }
 
   return true;

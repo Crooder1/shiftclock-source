@@ -19,10 +19,15 @@ constexpr uint16_t ALARM_RAMP_DURATION_SECONDS_MAX = 600;
 constexpr uint8_t ALARM_VOLUME_MAX = 100;
 constexpr uint16_t ALARM_AUTO_DISABLE_SECONDS_MAX = 3600;
 
-class Alarm {
+#define BCLK_PIN 4
+#define WS_PIN 5
+#define DOUT_PIN 3
 
-private:
-  bool playing = false;
+constexpr size_t AUDIO_CHUNK_SIZE = 1024;
+
+constexpr size_t ALARM_STACK_DEPTH = 4096;
+
+class Alarm {
 
 public:
   uint8_t days_active;
@@ -44,9 +49,6 @@ public:
   Alarm(const uint8_t(&packet)[PACKED_ALARM_SIZE]);
 
   void pack(uint8_t(&packet)[PACKED_ALARM_SIZE]) const;
-  bool startPlayingTune();
-  bool stopPlayingTune();
-  bool isPlaying() const;
 };
 
 void packAlarm(const Alarm& alarm, uint8_t(&packet)[PACKED_ALARM_SIZE]);
@@ -66,6 +68,11 @@ bool getAlarm(Alarm& alarm, uint8_t id);
 bool addAlarm(const Alarm& alarm);
 bool modifyAlarm(const Alarm& alarm, uint8_t id);
 bool removeAlarm(uint8_t id);
+
+bool initializeAlarms();
+bool initializeI2S();
+
+void writeAudio(const uint8_t* audio, size_t audioLength);
 
 bool loadAlarms();
 bool commitAlarms();

@@ -1,9 +1,8 @@
-#include <string>
-#include <time.h>
 #include "src/Display.hpp"
 #include "src/Settings.hpp"
 #include "src/Wifi.hpp"
 #include "src/ble/BLE.hpp"
+#include "src/alarm/Alarm.hpp"
 
 void setup() {
   Serial.begin(115200);
@@ -26,14 +25,14 @@ void loop() {
     initWifi();
     displaySymbols(SYNCING_SYMBOL);
     initTime();
+
+    if (!initializeAlarms()) {
+      Serial.println("Alarm initialization failed");
+    }
+
     return;
   }
 
-  // uint64_t timezoneOffset = getSetting(TIMEZONE_SETTING);
-  // time_t now = time(nullptr);
-  // uint64_t millisTime = ((uint64_t)now * 1000ULL)+ (timezoneOffset * 3600000LL);
-
-  //displayTime(millisTime, getSetting(MOVINGDP_SETTING), getSetting(MERIINDICATOR_SETTING), getSetting(SECONDS_SETTING), getSetting(CLOCKFORM_SETTING));
   displayTime();
 
   delay(1);
