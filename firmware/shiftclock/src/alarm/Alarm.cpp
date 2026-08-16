@@ -1,7 +1,11 @@
 #include "Alarm.hpp"
 
+#include "../Settings.hpp"
+
+#include <optional>
 #include <Preferences.h>
 #include <cstring>
+#include <mutex>
 #include <vector>
 #include <time.h>
 #include <ESP_I2S.h>
@@ -16,6 +20,7 @@ I2SClass I2S;
 bool i2SInitialized = false;
 
 std::vector<Alarm> alarms;
+std::mutex alarmsMutex;
 
 TaskHandle_t alarmTask = nullptr;
 
@@ -104,38 +109,48 @@ bool createAlarm(
 }
 
 size_t getAlarmCount() {
+  std::lock_guard<std::mutex> lock(alarmsMutex);
+ 
   return alarms.size();
 }
 
 bool getAlarm(Alarm& alarm, uint8_t id) {
+  std::lock_guard<std::mutex> lock(alarmsMutex);
 
   if (id >= alarms.size()) return false;
 
   alarm = alarms.at(id);
+
   return true;
 }
 
 bool addAlarm(const Alarm& alarm) {
+  std::lock_guard<std::mutex> lock(alarmsMutex);
 
   if (alarms.size() >= MAX_ALARMS) return false;
 
   alarms.push_back(alarm);
+
   return true;
 }
 
 bool modifyAlarm(const Alarm& alarm, uint8_t id) {
+  std::lock_guard<std::mutex> lock(alarmsMutex);
 
   if (id >= alarms.size()) return false;
-
+  
   alarms.at(id) = alarm;
+
   return true;
 }
 
 bool removeAlarm(uint8_t id) {
+  std::lock_guard<std::mutex> lock(alarmsMutex);
 
   if (id >= alarms.size()) return false;
 
   alarms.erase(alarms.begin() + id);
+
   return true;
 }
 
@@ -147,7 +162,7 @@ void alarmWorker(void* parameter) {
 
   uint32_t lastDaySeconds = local.tm_sec + local.tm_min * 60UL + local.tm_hour * 3600UL;
 
-  Alarm* activeAlarm = nullptr;
+  std::optional<Alarm> activeAlarm;
   uint32_t alarmActiveEpochSeconds = 0;
 
   while (true) {
@@ -160,29 +175,37 @@ void alarmWorker(void* parameter) {
     uint32_t daySeconds = local.tm_sec + local.tm_min * 60UL + local.tm_hour * 3600UL;
     uint32_t epochSeconds = (uint32_t)now;
 
-    if (activeAlarm != nullptr) {
+    if (activeAlarm.has_value()) {
+
       if (epochSeconds - alarmActiveEpochSeconds > activeAlarm->auto_disable_seconds) {
-        activeAlarm = nullptr;
+        activeAlarm.reset();
         alarmActiveEpochSeconds = 0;
       } else if (i2SInitialized) {
         
         AlarmTune tune;
+
         if (getTune(tune, activeAlarm->tune_id)) {
-          writeAudio(tune.data, tune.data_length);
+          writeAudio(tune.data, tune.data_length, activeAlarm->volume);
         }
       }
     }
 
-    for (Alarm& alarm : alarms) {
+    {
+      std::lock_guard<std::mutex> lock(alarmsMutex);
 
-      if (activeAlarm != nullptr) break;
+      for (size_t x = 0; x < min(MAX_ALARMS, alarms.size()); x++) {
 
-      bool alarmActive = ((alarm.days_active >> dayOfWeek) & 1) == 1;
-      if (!alarmActive) continue;
+        if (activeAlarm.has_value()) break;
 
-      if (lastDaySeconds <= alarm.alarm_seconds && alarm.alarm_seconds <= daySeconds) {
-        activeAlarm = &alarm;
-        alarmActiveEpochSeconds = epochSeconds;
+        Alarm alarm = alarms.at(x);
+
+        bool alarmActive = ((alarm.days_active >> dayOfWeek) & 1) == 1;
+        if (!alarmActive) continue;
+
+        if (lastDaySeconds <= alarm.alarm_seconds && alarm.alarm_seconds <= daySeconds) {
+          activeAlarm = alarm;
+          alarmActiveEpochSeconds = epochSeconds;
+        }
       }
     }
 
@@ -236,16 +259,29 @@ bool initializeI2S() {
   return true;
 }
 
-void writeAudio(const uint8_t* audio, size_t audioLength) {
+void writeAudio(const uint8_t* audio, size_t audioLength, uint8_t alarmVolume) {
 
   size_t offset = 0;
+
+  uint8_t audioBuffer[AUDIO_CHUNK_SIZE];
 
   while(offset < audioLength) {
 
     size_t count = min(AUDIO_CHUNK_SIZE, audioLength - offset);
+    
+    float volume = (alarmVolume / 100.0f) * (getSetting(VOLUME_SETTING) / 100.0f);
+
+    // scale as uint16_t
+    for (size_t x = 0; x < count; x += 2) {
+
+      int16_t sample = ((int16_t)(audio[offset + x]) + (int16_t)(audio[offset + x + 1] << 8)) * volume;
+
+      audioBuffer[x] = (sample) & 0xFF;
+      audioBuffer[x + 1] = (sample >> 8) & 0xFF;
+    }
 
     size_t written = I2S.write(
-      audio + offset,
+      audioBuffer,
       count
     );
 
@@ -258,6 +294,7 @@ void writeAudio(const uint8_t* audio, size_t audioLength) {
 }
 
 bool commitAlarms() {
+  std::lock_guard<std::mutex> lock(alarmsMutex);
 
   if (!alarm_preferences.begin(ALARM_PREFS_NAMESPACE, false)) {
     return false;
@@ -328,20 +365,22 @@ bool loadAlarms() {
     return false;
   }
 
-  alarms.clear();
+  {
+    std::lock_guard<std::mutex> lock(alarmsMutex);
 
-  for (size_t x = 0; x < alarmCount; x++) {
+    alarms.clear();
 
-    uint8_t alarmBuffer[PACKED_ALARM_SIZE];
-    memcpy(alarmBuffer, buffer + x * PACKED_ALARM_SIZE, PACKED_ALARM_SIZE);
+    for (size_t x = 0; x < min(alarmCount, MAX_ALARMS); x++) {
 
-    Alarm unpacked = unpackAlarm(alarmBuffer);
+      uint8_t alarmBuffer[PACKED_ALARM_SIZE];
+      memcpy(alarmBuffer, buffer + x * PACKED_ALARM_SIZE, PACKED_ALARM_SIZE);
 
-    if (!addAlarm(unpacked)) {
-      return false;
+      Alarm unpacked = unpackAlarm(alarmBuffer);
+      alarms.push_back(unpacked);
+
     }
 
-  }
+  } // alarmsMutex
 
   return true;
 }

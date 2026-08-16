@@ -8,7 +8,7 @@ constexpr size_t MAX_NAME_LENGTH = 20; // -1 for null terminator
 struct AlarmTune {
   const char* name;
   const uint8_t* data;
-  uint32_t data_length;
+  size_t data_length;
 };
 
 size_t getTuneCount();

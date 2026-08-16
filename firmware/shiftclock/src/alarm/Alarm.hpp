@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 
+constexpr size_t INVALID_ALARM_INDEX = 0xFF; 
 constexpr size_t MAX_ALARMS = 32;
 constexpr size_t PACKED_ALARM_SIZE = 10;
 
@@ -23,7 +24,7 @@ constexpr uint16_t ALARM_AUTO_DISABLE_SECONDS_MAX = 3600;
 #define WS_PIN 5
 #define DOUT_PIN 3
 
-constexpr size_t AUDIO_CHUNK_SIZE = 1024;
+constexpr size_t AUDIO_CHUNK_SIZE = 512;
 
 constexpr size_t ALARM_STACK_DEPTH = 4096;
 
@@ -72,7 +73,7 @@ bool removeAlarm(uint8_t id);
 bool initializeAlarms();
 bool initializeI2S();
 
-void writeAudio(const uint8_t* audio, size_t audioLength);
+void writeAudio(const uint8_t* audio, size_t audioLength, uint8_t volume);
 
 bool loadAlarms();
 bool commitAlarms();
