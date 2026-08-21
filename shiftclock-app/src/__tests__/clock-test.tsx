@@ -2,19 +2,23 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import ClockScreen from '../app/index';
+import { useAutoConnect } from '@/auto-connect/auto-connect';
 import {
   commitSettings,
   connect,
+  disconnect,
   reloadSettings,
   scan,
-  writeAlarm,
+  stopScan,
   writeSettings,
   type ClockSettingsSnapshot,
   type ConnectionStateChangedEvent,
-  type ShiftclockDevice,
 } from '../../modules/shiftclock-ble';
 
-let mockDiscoveredListener: ((device: ShiftclockDevice) => void) | undefined;
+jest.mock('@/auto-connect/auto-connect', () => ({
+  useAutoConnect: jest.fn(),
+}));
+
 let mockConnectionListener: ((event: ConnectionStateChangedEvent) => void) | undefined;
 let mockSettingsListener: ((settings: ClockSettingsSnapshot | null) => void) | undefined;
 
@@ -35,7 +39,7 @@ jest.mock('../../modules/shiftclock-ble', () => ({
   scan: jest.fn().mockResolvedValue(undefined),
   stopScan: jest.fn().mockResolvedValue(undefined),
   connect: jest.fn().mockResolvedValue(undefined),
-  writeAlarm: jest.fn().mockResolvedValue(undefined),
+  disconnect: jest.fn().mockResolvedValue(undefined),
   writeSettings: jest.fn().mockResolvedValue(undefined),
   commitSettings: jest.fn().mockResolvedValue(undefined),
   reloadSettings: jest.fn().mockResolvedValue({
@@ -50,10 +54,6 @@ jest.mock('../../modules/shiftclock-ble', () => ({
   addSettingsListener: jest.fn((listener) => {
     mockSettingsListener = listener;
     listener(null);
-    return { remove: jest.fn() };
-  }),
-  addDeviceDiscoveredListener: jest.fn((listener) => {
-    mockDiscoveredListener = listener;
     return { remove: jest.fn() };
   }),
   addConnectionStateListener: jest.fn((listener) => {
@@ -98,7 +98,7 @@ describe('ClockScreen', () => {
     jest.clearAllMocks();
     jest.mocked(scan).mockResolvedValue(undefined);
     jest.mocked(connect).mockResolvedValue(undefined);
-    jest.mocked(writeAlarm).mockResolvedValue(undefined);
+    jest.mocked(disconnect).mockResolvedValue(undefined);
     jest.mocked(writeSettings).mockResolvedValue(undefined);
     jest.mocked(commitSettings).mockResolvedValue(undefined);
     jest.mocked(reloadSettings).mockResolvedValue({
@@ -110,15 +110,39 @@ describe('ClockScreen', () => {
       clockForm: 0,
       meriIndicator: 1,
     });
+    jest.mocked(useAutoConnect).mockReturnValue({
+      clearTarget: jest.fn().mockResolvedValue(undefined),
+      devices: {},
+      enabled: false,
+      error: null,
+      hydrated: true,
+      setEnabled: jest.fn().mockResolvedValue(undefined),
+      setTarget: jest.fn().mockResolvedValue(undefined),
+      startScan: jest.fn().mockResolvedValue(undefined),
+      target: null,
+    });
   });
 
-  test('updates one row for repeated advertisements and connects that device', async () => {
-    await renderClock();
+  test('orders connection, devices, and settings from top to bottom', async () => {
+    const view = await renderClock();
+    const tree = JSON.stringify(view.toJSON());
+    const connectionIndex = tree.indexOf('Connection');
+    const devicesIndex = tree.indexOf('Devices');
+    const settingsIndex = tree.indexOf('Clock settings');
 
-    await act(async () => {
-      mockDiscoveredListener?.({ id: 'clock-1', name: null, rssi: -70 });
-      mockDiscoveredListener?.({ id: 'clock-1', name: 'Bedroom Clock', rssi: -54 });
+    expect(connectionIndex).toBeGreaterThan(-1);
+    expect(devicesIndex).toBeGreaterThan(connectionIndex);
+    expect(settingsIndex).toBeGreaterThan(devicesIndex);
+  });
+
+  test('shows the latest retained advertisement and connects that device', async () => {
+    jest.mocked(useAutoConnect).mockReturnValue({
+      ...jest.mocked(useAutoConnect)(),
+      devices: {
+        'clock-1': { id: 'clock-1', name: 'Bedroom Clock', rssi: -54 },
+      },
     });
+    await renderClock();
 
     expect(screen.getAllByText('Bedroom Clock')).toHaveLength(1);
     expect(screen.getByText('RSSI -54 dBm')).toBeTruthy();
@@ -128,27 +152,85 @@ describe('ClockScreen', () => {
     await waitFor(() => expect(connect).toHaveBeenCalledWith('clock-1'));
   });
 
-  test('sends the fixed Alarm packet only after a connected event', async () => {
+  test('shows devices retained from the startup scan before the Clock tab mounted', async () => {
+    jest.mocked(useAutoConnect).mockReturnValue({
+      ...jest.mocked(useAutoConnect)(),
+      devices: {
+        'clock-4': { id: 'clock-4', name: 'Hall Clock', rssi: -48 },
+      },
+    });
+
     await renderClock();
 
-    expect(screen.getByRole('button', { name: 'Send alarm packet' })).toBeDisabled();
+    expect(screen.getByText('Hall Clock')).toBeTruthy();
+    expect(screen.getByText('RSSI -48 dBm')).toBeTruthy();
+  });
 
+  test('explicitly disconnects the connected clock from the status card', async () => {
+    await renderClock();
+    await act(async () => {
+      mockSettingsListener?.(SETTINGS);
+      mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
+    });
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Disconnect from clock' }));
+
+    await waitFor(() => expect(disconnect).toHaveBeenCalledTimes(1));
+  });
+
+  test('replaces the Auto-Connect target with the connected clock', async () => {
+    const setTarget = jest.fn().mockResolvedValue(undefined);
+    jest.mocked(useAutoConnect).mockReturnValue({
+      ...jest.mocked(useAutoConnect)(),
+      devices: {
+        'clock-1': { id: 'clock-1', name: 'Bedroom Clock', rssi: -54 },
+      },
+      enabled: true,
+      setTarget,
+      target: { id: 'clock-7', name: 'Kitchen Clock' },
+    });
+    await renderClock();
     await act(async () => {
       mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
     });
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Send alarm packet' }));
-    await waitFor(() =>
-      expect(writeAlarm).toHaveBeenCalledWith({
-        daysActive: 0,
-        secondsOfDay: 0,
-        tuneId: 0,
-        rampDurationSeconds: 0,
-        volume: 0,
-        autoDisableSeconds: 0,
-      })
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Auto-connect to this clock' })
     );
-    await screen.findByText('Alarm packet sent');
+
+    await waitFor(() =>
+      expect(setTarget).toHaveBeenCalledWith({ id: 'clock-1', name: 'Bedroom Clock' })
+    );
+  });
+
+  test('removes the connected clock as the Auto-Connect target', async () => {
+    const clearTarget = jest.fn().mockResolvedValue(undefined);
+    jest.mocked(useAutoConnect).mockReturnValue({
+      ...jest.mocked(useAutoConnect)(),
+      clearTarget,
+      enabled: true,
+      target: { id: 'clock-1', name: 'Bedroom Clock' },
+    });
+    await renderClock();
+    await act(async () => {
+      mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
+    });
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Remove auto-connect' }));
+
+    await waitFor(() => expect(clearTarget).toHaveBeenCalledTimes(1));
+  });
+
+  test('hides the Auto-Connect target action when the setting is disabled', async () => {
+    await renderClock();
+    await act(async () => {
+      mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
+    });
+
+    expect(
+      screen.queryByRole('button', { name: 'Auto-connect to this clock' })
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove auto-connect' })).toBeNull();
   });
 
   test('shows Clock settings visibly disabled until connection and hydration finish', async () => {
@@ -169,7 +251,7 @@ describe('ClockScreen', () => {
     });
 
     expect(screen.getByTestId('clock-settings-section')).toHaveStyle({ opacity: 1 });
-    expect(screen.getByText('Timezone: 19')).toBeTruthy();
+    expect(screen.getByText('Timezone: -5')).toBeTruthy();
     expect(screen.getByText('Brightness: 8')).toBeTruthy();
     expect(screen.getByText('Moving decimal point: 2')).toBeTruthy();
     expect(screen.getByText('Volume: 20')).toBeTruthy();
@@ -194,10 +276,10 @@ describe('ClockScreen', () => {
     expect(await screen.findByText('Timezone: 4')).toBeTruthy();
   });
 
-  test('removes only the raw Settings test button', async () => {
+  test('does not expose raw packet test buttons', async () => {
     await renderClock();
     expect(screen.queryByRole('button', { name: 'Send settings packet' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Send alarm packet' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Send alarm packet' })).toBeNull();
   });
 
   test('samples Brightness and flushes its final release value', async () => {
@@ -245,17 +327,40 @@ describe('ClockScreen', () => {
   });
 
   test('renders BLE rejection feedback', async () => {
-    jest.mocked(scan).mockRejectedValueOnce(new Error('ERR_NOT_IMPLEMENTED'));
+    const startScan = jest.fn().mockRejectedValueOnce(new Error('ERR_NOT_IMPLEMENTED'));
+    jest.mocked(useAutoConnect).mockReturnValue({
+      ...jest.mocked(useAutoConnect)(),
+      startScan,
+    });
     await renderClock();
 
     await fireEvent.press(screen.getByRole('button', { name: 'Scan for devices' }));
 
-    expect(await screen.findByText('ERR_NOT_IMPLEMENTED')).toBeTruthy();
+    expect(await screen.findByText('ERR_NOT_IMPLEMENTED')).toHaveProp(
+      'accessibilityLiveRegion',
+      'polite'
+    );
+  });
+
+  test('routes manual scans through Auto-Connect and leaves scan ownership at app scope', async () => {
+    const startScan = jest.fn().mockResolvedValue(undefined);
+    jest.mocked(useAutoConnect).mockReturnValue({
+      ...jest.mocked(useAutoConnect)(),
+      startScan,
+    });
+    const view = await renderClock();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Scan for devices' }));
+    await waitFor(() => expect(startScan).toHaveBeenCalledTimes(1));
+    expect(scan).not.toHaveBeenCalled();
+
+    view.unmount();
+    expect(stopScan).not.toHaveBeenCalled();
   });
 });
 
 const SETTINGS: ClockSettingsSnapshot = {
-  timezone: 19,
+  timezone: -5,
   brightness: 8,
   seconds: 1,
   movingDp: 2,

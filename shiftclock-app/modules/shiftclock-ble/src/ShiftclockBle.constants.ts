@@ -3,11 +3,14 @@ export const SHIFTCLOCK_BLE_UUIDS = {
   alarmCharacteristic: '8984ff44-0001-4291-868b-2a44c36ed7e8',
   settingsCharacteristic: '8984ff44-0002-4291-868b-2a44c36ed7e8',
   messageCharacteristic: '8984ff44-0003-4291-868b-2a44c36ed7e8',
+  tuneCharacteristic: '8984ff44-0004-4291-868b-2a44c36ed7e8',
 } as const;
 
 export const SHIFTCLOCK_BLE_PROTOCOL = {
   header: 0,
   alarm: {
+    invalidId: 0xff,
+    maximumCount: 32,
     packetSize: 13,
     readPacketSize: 12,
     offsets: {
@@ -34,7 +37,23 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
       add: 1,
       modify: 2,
       remove: 3,
+      commit: 4,
+      reload: 5,
     },
+  },
+  tune: {
+    invalidId: 0xff,
+    maximumCount: 32,
+    writePacketSize: 2,
+    readPacketSize: 26,
+    bytesPerSecond: 32_000,
+    offsets: {
+      header: 0,
+      id: 1,
+      dataLength: 2,
+      name: 6,
+    },
+    nameSize: 20,
   },
   settings: {
     packetSize: 3,
@@ -54,7 +73,7 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
       meriIndicator: 6,
     },
     ranges: {
-      timezone: { min: 0, max: 23 },
+      timezone: { min: -12, max: 11 },
       brightness: { min: 0, max: 15 },
       seconds: { min: 0, max: 1 },
       movingDp: { min: 0, max: 2 },
@@ -63,8 +82,8 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
       meriIndicator: { min: 0, max: 1 },
     },
     commands: {
-      commit: { id: 0xff, value: 0xff },
-      reload: { id: 0xff, value: 0xfe },
+      commit: { id: -1, value: -1 },
+      reload: { id: -1, value: -2 },
     },
   },
   message: {
@@ -77,5 +96,6 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
       description: 3,
     },
     infoOperationSucceeded: { type: 0, code: 0 },
+    errorOperationFailed: { type: 1, code: 7 },
   },
 } as const;

@@ -36,7 +36,7 @@ const settingKeys: (keyof ClockSettingsSnapshot)[] = [
 const ids = SHIFTCLOCK_BLE_PROTOCOL.settings.ids;
 
 const sliders = [
-  { key: 'timezone', label: 'Timezone', id: ids.timezone, minimum: 0, maximum: 23 },
+  { key: 'timezone', label: 'Timezone', id: ids.timezone, minimum: -12, maximum: 11 },
   { key: 'brightness', label: 'Brightness', id: ids.brightness, minimum: 0, maximum: 15 },
   {
     key: 'movingDp',

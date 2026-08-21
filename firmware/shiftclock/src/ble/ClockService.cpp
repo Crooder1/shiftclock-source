@@ -8,13 +8,59 @@
 #include "BLETaskQueue.hpp"
 
 #include <Arduino.h>
+#include <cstring>
+#include <limits>
 #include <string>
 
 namespace {
 
 NimBLECharacteristic* messageCharacteristic = nullptr;
 AlarmWriteCallback alarmWriteCallback;
+TuneCallback tuneCallback;
 SettingsCallback settingsCallback;
+
+void encodeAlarmReadResponse(
+  uint8_t (&packet)[ALARM_READ_PACKET_SIZE],
+  uint8_t idOrCount,
+  const uint8_t* packedAlarm
+) {
+  memset(packet, 0, sizeof(packet));
+  packet[HEADER_OFFSET] = PROTOCOL_HEADER;
+  packet[ALARM_READ_ID_OFFSET] = idOrCount;
+
+  if (packedAlarm != nullptr) {
+    memcpy(packet + ALARM_READ_PAYLOAD_OFFSET, packedAlarm, PACKED_ALARM_SIZE);
+  }
+}
+
+bool encodeTuneReadResponse(
+  uint8_t (&packet)[TUNE_READ_PACKET_SIZE],
+  uint8_t idOrCount,
+  size_t dataLength,
+  const char* name
+) {
+  if (dataLength > std::numeric_limits<uint32_t>::max()) return false;
+
+  memset(packet, 0, sizeof(packet));
+  packet[HEADER_OFFSET] = PROTOCOL_HEADER;
+  packet[TUNE_ID_OFFSET] = idOrCount;
+
+  const uint32_t wireDataLength = static_cast<uint32_t>(dataLength);
+  for (size_t index = 0; index < sizeof(wireDataLength); ++index) {
+    packet[TUNE_DATA_LENGTH_OFFSET + index] =
+      (wireDataLength >> (index * 8)) & 0xFF;
+  }
+
+  if (name != nullptr) {
+    size_t nameLength = 0;
+    while (nameLength < MAX_NAME_LENGTH - 1 && name[nameLength] != '\0') {
+      ++nameLength;
+    }
+    memcpy(packet + TUNE_NAME_OFFSET, name, nameLength);
+  }
+
+  return true;
+}
 
 } // namespace
 
@@ -29,6 +75,14 @@ NimBLEService* createClockService(NimBLEServer& server) {
     NIMBLE_PROPERTY::READ
   );
   alarm->setCallbacks(&alarmWriteCallback);
+
+  NimBLECharacteristic* tune = service->createCharacteristic(
+    TUNE_CHAR_UUID,
+    NIMBLE_PROPERTY::WRITE |
+    NIMBLE_PROPERTY::WRITE_NR |
+    NIMBLE_PROPERTY::READ
+  );
+  tune->setCallbacks(&tuneCallback);
 
   NimBLECharacteristic* settings = service->createCharacteristic(
     SETTINGS_CHAR_UUID,
@@ -82,7 +136,7 @@ void AlarmWriteCallback::onWrite(NimBLECharacteristic* characteristic, NimBLECon
     
     const uint8_t alarmId = readByte(data, dataLength, ALARM_ID_OFFSET);
 
-    if (alarmId >= getAlarmCount()) {
+    if (alarmId != INVALID_ALARM_ID && alarmId >= getAlarmCount()) {
       emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Alarm id");
       return;
     }
@@ -105,6 +159,17 @@ void AlarmWriteCallback::onWrite(NimBLECharacteristic* characteristic, NimBLECon
 void AlarmWriteCallback::onRead(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) {
   (void)connection;
 
+  uint8_t packet[ALARM_READ_PACKET_SIZE];
+
+  if (selectedAlarmId == INVALID_ALARM_ID) {
+    encodeAlarmReadResponse(
+      packet,
+      static_cast<uint8_t>(getAlarmCount()),
+      nullptr);
+    characteristic->setValue(packet, sizeof(packet));
+    return;
+  }
+
   Alarm alarm;
   if (!getAlarm(alarm, selectedAlarmId)) {
     emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Alarm Id");
@@ -114,10 +179,65 @@ void AlarmWriteCallback::onRead(NimBLECharacteristic* characteristic, NimBLEConn
   uint8_t packedAlarm[PACKED_ALARM_SIZE];
   packAlarm(alarm, packedAlarm);
 
-  uint8_t packet[ALARM_READ_PACKET_SIZE];
-  packet[0] = PROTOCOL_HEADER;
-  packet[1] = selectedAlarmId;
-  memcpy(packet + 2, packedAlarm, sizeof(packedAlarm));
+  encodeAlarmReadResponse(packet, selectedAlarmId, packedAlarm);
+
+  characteristic->setValue(packet, sizeof(packet));
+}
+
+void TuneCallback::onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) {
+  (void)connection;
+
+  const std::string value = characteristic->getValue();
+  const auto* data = reinterpret_cast<const uint8_t*>(value.data());
+  const size_t dataLength = value.size();
+
+  if (dataLength != TUNE_WRITE_PACKET_SIZE) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET_SIZE, "Write Tune: Invalid Size");
+    return;
+  }
+
+  if (!hasSupportedHeader(data, dataLength)) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Write Tune: Invalid Packet");
+    return;
+  }
+
+  const uint8_t tuneId = readByte(data, dataLength, TUNE_ID_OFFSET);
+  if (tuneId != INVALID_TUNE_ID && tuneId >= getTuneCount()) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Tune id");
+    return;
+  }
+
+  selectedTuneId = tuneId;
+  emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Tune Selection Succeeded");
+}
+
+void TuneCallback::onRead(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) {
+  (void)connection;
+
+  uint8_t packet[TUNE_READ_PACKET_SIZE];
+
+  if (selectedTuneId == INVALID_TUNE_ID) {
+    encodeTuneReadResponse(
+      packet,
+      static_cast<uint8_t>(getTuneCount()),
+      0,
+      nullptr);
+    characteristic->setValue(packet, sizeof(packet));
+    return;
+  }
+
+  AlarmTune tune;
+  if (
+    !getTune(tune, selectedTuneId)
+    || !encodeTuneReadResponse(
+      packet,
+      selectedTuneId,
+      tune.data_length,
+      tune.name)
+  ) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Tune Id");
+    return;
+  }
 
   characteristic->setValue(packet, sizeof(packet));
 }
@@ -159,7 +279,7 @@ void SettingsCallback::onRead(NimBLECharacteristic* characteristic, NimBLEConnIn
   packet[0] = PROTOCOL_HEADER;
   
   for (uint8_t x = 0; x < SETTINGS_COUNT; x++) {
-    packet[1 + x] = getSetting(x);
+    packet[1 + x] = encodeSignedByte(getSetting(x));
   }
 
   characteristic->setValue(packet, sizeof(packet));
@@ -221,6 +341,20 @@ void processAlarmWrite(const uint8_t (&packet)[ALARM_WRITE_PACKET_SIZE]) {
       emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Alarm Id");
       return;
     }
+  } else if (command == ALARM_COMMIT_COMMAND) {
+    if (!commitAlarms()) {
+      emitMessage(ERROR_TAG, ERROR_OPERATION_FAILED, "Alarm Commit Failed");
+      return;
+    }
+    emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Alarm Commit Succeeded");
+    return;
+  } else if (command == ALARM_RELOAD_COMMAND) {
+    if (!loadAlarms()) {
+      emitMessage(ERROR_TAG, ERROR_OPERATION_FAILED, "Alarm Reload Failed");
+      return;
+    }
+    emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Alarm Reload Succeeded");
+    return;
   } else {
     emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Command");
     return;
@@ -231,26 +365,26 @@ void processAlarmWrite(const uint8_t (&packet)[ALARM_WRITE_PACKET_SIZE]) {
 
 void processSettingsWrite(const uint8_t (&packet)[SETTINGS_WRITE_PACKET_SIZE]) {
 
-  const uint8_t settingId = readByte(packet, sizeof(packet), SETTINGS_ID_OFFSET);
-  const uint8_t settingValue = readByte(packet, sizeof(packet), SETTINGS_VALUE_OFFSET);
+  const int8_t settingId = readSignedByte(packet, sizeof(packet), SETTINGS_ID_OFFSET);
+  const int8_t settingValue = readSignedByte(packet, sizeof(packet), SETTINGS_VALUE_OFFSET);
 
-  if (settingId == 0xFF && settingValue == 0xFF) {
+  if (settingId == SETTINGS_COMMAND_ID && settingValue == SETTINGS_COMMIT_VALUE) {
     if (commitSettings()) {
       emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Settings Write Succeeded");
     }
     return;
-  } else if (settingId == 0xFF && settingValue == 0xFE) {
+  } else if (settingId == SETTINGS_COMMAND_ID && settingValue == SETTINGS_RELOAD_VALUE) {
     if (loadSettings()) {
       emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Settings Write Succeeded");
     }
     return;
   }
 
-  if (settingId > 6) {
+  if (settingId < 0 || settingId >= SETTINGS_COUNT) {
     emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Setting");
     return;
   }
 
-  setSetting(settingId, settingValue);
+  setSetting(static_cast<uint8_t>(settingId), settingValue);
   emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Settings Write Succeeded");
 }

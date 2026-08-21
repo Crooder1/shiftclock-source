@@ -35,6 +35,10 @@ function readyPeripheral() {
         service: '8984ff44-0000-4291-868b-2a44c36ed7e8',
         characteristic: '8984ff44-0003-4291-868b-2a44c36ed7e8',
       },
+      {
+        service: '8984ff44-0000-4291-868b-2a44c36ed7e8',
+        characteristic: '8984ff44-0004-4291-868b-2a44c36ed7e8',
+      },
     ],
   };
 }
@@ -55,7 +59,7 @@ function createManager() {
     disconnect: jest.fn().mockResolvedValue(undefined),
     retrieveServices: jest.fn().mockResolvedValue(readyPeripheral()),
     requestMTU: jest.fn().mockResolvedValue(46),
-    read: jest.fn().mockResolvedValue([0, 19, 8, 1, 2, 20, 1, 0]),
+    read: jest.fn().mockResolvedValue([0, 0xfb, 8, 1, 2, 20, 1, 0]),
     startNotification: jest.fn().mockResolvedValue(undefined),
     stopNotification: jest.fn().mockResolvedValue(undefined),
     write: jest.fn().mockResolvedValue(undefined),
@@ -95,6 +99,51 @@ async function acknowledgeSettings(
     service: '8984ff44-0000-4291-868b-2a44c36ed7e8',
     characteristic: '8984ff44-0003-4291-868b-2a44c36ed7e8',
     value: messagePacket(0, 0, 'Settings Write Succeeded'),
+  });
+}
+
+function tunePacket(id: number, dataLength: number, name: string): number[] {
+  const nameBytes = Array.from(name, (character) => character.charCodeAt(0));
+  return [
+    0,
+    id,
+    dataLength & 0xff,
+    (dataLength >>> 8) & 0xff,
+    (dataLength >>> 16) & 0xff,
+    (dataLength >>> 24) & 0xff,
+    ...nameBytes,
+    ...Array(20 - nameBytes.length).fill(0),
+  ];
+}
+
+function alarmPacket(
+  id: number,
+  daysActive: number,
+  secondsOfDay: number,
+  tuneId: number,
+  rampDurationSeconds: number,
+  volume: number,
+  autoDisableSeconds: number
+): number[] {
+  return [
+    0,
+    id,
+    daysActive,
+    secondsOfDay & 0xff,
+    (secondsOfDay >>> 8) & 0xff,
+    (secondsOfDay >>> 16) & 0xff,
+    tuneId,
+    rampDurationSeconds & 0xff,
+    (rampDurationSeconds >>> 8) & 0xff,
+    volume,
+    autoDisableSeconds & 0xff,
+    (autoDisableSeconds >>> 8) & 0xff,
+  ];
+}
+
+function acknowledgeEveryWrite(fake: ReturnType<typeof createManager>): void {
+  jest.mocked(fake.manager.write).mockImplementation(async () => {
+    await acknowledgeSettings(fake);
   });
 }
 
@@ -165,7 +214,7 @@ describe('ShiftclockBleController', () => {
     expect(settings).toEqual([
       null,
       {
-        timezone: 19,
+        timezone: -5,
         brightness: 8,
         seconds: 1,
         movingDp: 2,
@@ -199,7 +248,7 @@ describe('ShiftclockBleController', () => {
 
     await fake.disconnect({ peripheral: 'clock-1' });
 
-    expect(settings[0]).toMatchObject({ timezone: 19 });
+    expect(settings[0]).toMatchObject({ timezone: -5 });
     expect(settings.at(-1)).toBeNull();
   });
 
@@ -228,6 +277,214 @@ describe('ShiftclockBleController', () => {
 
     expect(states.at(-1)).toEqual({ state: 'disconnected', deviceId: 'clock-1' });
     expect(fake.manager.startNotification).not.toHaveBeenCalled();
+  });
+
+  test('rejects a clock that is missing the Tune characteristic', async () => {
+    const fake = createManager();
+    jest.mocked(fake.manager.retrieveServices).mockResolvedValue({
+      ...readyPeripheral(),
+      characteristics: readyPeripheral().characteristics.slice(0, 3),
+    });
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+
+    await expect(controller.connect('clock-1')).rejects.toThrow(
+      'Tune characteristic was not discovered'
+    );
+  });
+
+  test('enumerates Tunes then Alarms and replays only complete snapshots', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    jest.mocked(fake.manager.read)
+      .mockReset()
+      .mockResolvedValueOnce([0, 1, ...Array(24).fill(0)])
+      .mockResolvedValueOnce(tunePacket(0, 41_144, 'Push'))
+      .mockResolvedValueOnce([0, 2, ...Array(10).fill(0)])
+      .mockResolvedValueOnce(alarmPacket(0, 31, 25_201, 0, 3, 40, 300))
+      .mockResolvedValueOnce(alarmPacket(1, 64, 86_399, 0, 0, 100, 0));
+    acknowledgeEveryWrite(fake);
+    const alarmSnapshots: unknown[] = [];
+    const tuneSnapshots: unknown[] = [];
+    controller.addAlarmListener((alarms) => alarmSnapshots.push(alarms));
+    controller.addTuneListener((tunes) => tuneSnapshots.push(tunes));
+
+    await expect(controller.reloadAlarmData()).resolves.toEqual({
+      tunes: [{ id: 0, name: 'Push', loopDurationSeconds: 1.28575 }],
+      alarms: [
+        {
+          id: 0,
+          daysActive: 31,
+          secondsOfDay: 25_201,
+          tuneId: 0,
+          rampDurationSeconds: 3,
+          volume: 40,
+          autoDisableSeconds: 300,
+        },
+        {
+          id: 1,
+          daysActive: 64,
+          secondsOfDay: 86_399,
+          tuneId: 0,
+          rampDurationSeconds: 0,
+          volume: 100,
+          autoDisableSeconds: 0,
+        },
+      ],
+    });
+
+    expect(jest.mocked(fake.manager.write).mock.calls.map((call) => call[3])).toEqual([
+      [0, 0xff],
+      [0, 0],
+      [0, 0, 0xff, ...Array(10).fill(0)],
+      [0, 0, 0, ...Array(10).fill(0)],
+      [0, 0, 1, ...Array(10).fill(0)],
+    ]);
+    expect(alarmSnapshots).toHaveLength(2);
+    expect(tuneSnapshots).toHaveLength(2);
+    expect(alarmSnapshots[0]).toBeNull();
+    expect(tuneSnapshots[0]).toBeNull();
+
+    const replayedAlarms: unknown[] = [];
+    const replayedTunes: unknown[] = [];
+    controller.addAlarmListener((alarms) => replayedAlarms.push(alarms));
+    controller.addTuneListener((tunes) => replayedTunes.push(tunes));
+    expect(replayedAlarms).toEqual([alarmSnapshots[1]]);
+    expect(replayedTunes).toEqual([tuneSnapshots[1]]);
+  });
+
+  test('acknowledges an Alarm mutation, rereads Alarms, and publishes shifted IDs', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    jest.mocked(fake.manager.read)
+      .mockReset()
+      .mockResolvedValueOnce([0, 1, ...Array(10).fill(0)])
+      .mockResolvedValueOnce(alarmPacket(0, 1, 2, 0, 3, 4, 5));
+    acknowledgeEveryWrite(fake);
+    const snapshots: unknown[] = [];
+    controller.addAlarmListener((alarms) => snapshots.push(alarms));
+
+    await controller.removeAlarm(1);
+
+    expect(jest.mocked(fake.manager.write).mock.calls.map((call) => call[3])).toEqual([
+      [0, 3, 1, ...Array(10).fill(0)],
+      [0, 0, 0xff, ...Array(10).fill(0)],
+      [0, 0, 0, ...Array(10).fill(0)],
+    ]);
+    expect(snapshots.at(-1)).toEqual([
+      {
+        id: 0,
+        daysActive: 1,
+        secondsOfDay: 2,
+        tuneId: 0,
+        rampDurationSeconds: 3,
+        volume: 4,
+        autoDisableSeconds: 5,
+      },
+    ]);
+  });
+
+  test('commits Alarms with the exact command and waits for acknowledgement', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    jest.mocked(fake.manager.write).mockClear();
+
+    const commit = controller.commitAlarms();
+    await Promise.resolve();
+
+    expect(fake.manager.write).toHaveBeenCalledWith(
+      'clock-1',
+      '8984ff44-0000-4291-868b-2a44c36ed7e8',
+      '8984ff44-0001-4291-868b-2a44c36ed7e8',
+      [0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      13
+    );
+    await acknowledgeSettings(fake);
+
+    await expect(commit).resolves.toBeUndefined();
+  });
+
+  test('reloads persisted Alarms before rereading and publishing them', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    jest.mocked(fake.manager.write).mockClear();
+    jest.mocked(fake.manager.read).mockReset().mockResolvedValue([0, 0, ...Array(10).fill(0)]);
+    acknowledgeEveryWrite(fake);
+    const snapshots: unknown[] = [];
+    controller.addAlarmListener((alarms) => snapshots.push(alarms));
+
+    await expect(controller.reloadAlarms()).resolves.toEqual([]);
+
+    expect(jest.mocked(fake.manager.write).mock.calls.map((call) => call[3])).toEqual([
+      [0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0xff, ...Array(10).fill(0)],
+    ]);
+    expect(snapshots).toEqual([null, []]);
+  });
+
+  test('rejects Alarm Commit immediately when firmware reports persistence failure', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+
+    const commit = controller.commitAlarms();
+    await Promise.resolve();
+    await fake.notify({
+      peripheral: 'clock-1',
+      service: '8984ff44-0000-4291-868b-2a44c36ed7e8',
+      characteristic: '8984ff44-0003-4291-868b-2a44c36ed7e8',
+      value: messagePacket(1, 7, 'Alarm Commit Failed'),
+    });
+
+    await expect(commit).rejects.toThrow('Alarm Commit Failed');
+  });
+
+  test('rejects Alarm Reload without enumeration when firmware reports failure', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    jest.mocked(fake.manager.read).mockClear();
+
+    const reload = controller.reloadAlarms();
+    await Promise.resolve();
+    await fake.notify({
+      peripheral: 'clock-1',
+      service: '8984ff44-0000-4291-868b-2a44c36ed7e8',
+      characteristic: '8984ff44-0003-4291-868b-2a44c36ed7e8',
+      value: messagePacket(1, 7, 'Alarm Reload Failed'),
+    });
+
+    await expect(reload).rejects.toThrow('Alarm Reload Failed');
+    expect(fake.manager.read).not.toHaveBeenCalled();
+  });
+
+  test('rejects an enumeration and leaves snapshots empty when the connection changes', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    let finishRead: ((packet: number[]) => void) | undefined;
+    jest.mocked(fake.manager.read).mockImplementationOnce(
+      () => new Promise<number[]>((resolve) => { finishRead = resolve; })
+    );
+    acknowledgeEveryWrite(fake);
+    const alarmSnapshots: unknown[] = [];
+    const tuneSnapshots: unknown[] = [];
+    controller.addAlarmListener((alarms) => alarmSnapshots.push(alarms));
+    controller.addTuneListener((tunes) => tuneSnapshots.push(tunes));
+
+    const reload = controller.reloadAlarmData();
+    const rejectedReload = expect(reload).rejects.toThrow('connection changed');
+    await Promise.resolve();
+    await Promise.resolve();
+    await fake.disconnect({ peripheral: 'clock-1' });
+    finishRead?.([0, 0, ...Array(24).fill(0)]);
+
+    await rejectedReload;
+    expect(alarmSnapshots).toEqual([null]);
+    expect(tuneSnapshots).toEqual([null]);
   });
 
   test('decodes valid Message notifications and ignores unrelated or malformed packets', async () => {
@@ -547,6 +804,25 @@ describe('ShiftclockBleController', () => {
     expect(settings.at(-1)).toMatchObject({ brightness: 12 });
   });
 
+  test('writes a negative Setting value as a two-complement byte', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+
+    const write = controller.writeSettings({ id: 0, value: -12 });
+    await Promise.resolve();
+    expect(fake.manager.write).toHaveBeenLastCalledWith(
+      'clock-1',
+      '8984ff44-0000-4291-868b-2a44c36ed7e8',
+      '8984ff44-0002-4291-868b-2a44c36ed7e8',
+      [0, 0, 0xf4],
+      3
+    );
+    await acknowledgeSettings(fake);
+
+    await expect(write).resolves.toBeUndefined();
+  });
+
   test('registers the Settings acknowledgement before the native write', async () => {
     const fake = createManager();
     jest.mocked(fake.manager.write).mockImplementation(async () => {
@@ -658,9 +934,13 @@ describe('ShiftclockBleController', () => {
           finishFirstWrite = resolve;
         })
       )
+      .mockImplementationOnce(async () => {
+        await acknowledgeSettings(fake);
+      })
       .mockResolvedValueOnce(undefined);
     const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
     await controller.connect('clock-1');
+    jest.mocked(fake.manager.read).mockResolvedValue([0, 0, ...Array(10).fill(0)]);
 
     const alarmWrite = controller.writeAlarm({
       daysActive: 1,
@@ -674,6 +954,7 @@ describe('ShiftclockBleController', () => {
     await Promise.resolve();
 
     expect(fake.manager.write).toHaveBeenCalledTimes(1);
+    await acknowledgeSettings(fake);
     finishFirstWrite?.();
     await alarmWrite;
     await Promise.resolve();
@@ -689,7 +970,7 @@ describe('ShiftclockBleController', () => {
       13
     );
     expect(fake.manager.write).toHaveBeenNthCalledWith(
-      2,
+      3,
       'clock-1',
       '8984ff44-0000-4291-868b-2a44c36ed7e8',
       '8984ff44-0002-4291-868b-2a44c36ed7e8',

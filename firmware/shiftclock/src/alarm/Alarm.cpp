@@ -2,6 +2,7 @@
 
 #include "../Settings.hpp"
 
+#include <atomic>
 #include <optional>
 #include <Preferences.h>
 #include <cstring>
@@ -23,6 +24,8 @@ std::vector<Alarm> alarms;
 std::mutex alarmsMutex;
 
 TaskHandle_t alarmTask = nullptr;
+
+std::atomic<uint32_t> audioGeneration = 0;
 
 } // namespace
 
@@ -131,6 +134,8 @@ bool addAlarm(const Alarm& alarm) {
 
   alarms.push_back(alarm);
 
+  Serial.println("Alarm Added");
+
   return true;
 }
 
@@ -141,6 +146,8 @@ bool modifyAlarm(const Alarm& alarm, uint8_t id) {
   
   alarms.at(id) = alarm;
 
+  Serial.println("Alarm Modified");
+
   return true;
 }
 
@@ -150,6 +157,8 @@ bool removeAlarm(uint8_t id) {
   if (id >= alarms.size()) return false;
 
   alarms.erase(alarms.begin() + id);
+
+  Serial.println("Alarm Removed");
 
   return true;
 }
@@ -178,6 +187,7 @@ void alarmWorker(void* parameter) {
     if (activeAlarm.has_value()) {
 
       if (epochSeconds - alarmActiveEpochSeconds > activeAlarm->auto_disable_seconds) {
+        Serial.println("Alarm Timed Out");
         activeAlarm.reset();
         alarmActiveEpochSeconds = 0;
       } else if (i2SInitialized) {
@@ -185,7 +195,13 @@ void alarmWorker(void* parameter) {
         AlarmTune tune;
 
         if (getTune(tune, activeAlarm->tune_id)) {
-          writeAudio(tune.data, tune.data_length, activeAlarm->volume);
+          
+          bool cancelled = !writeAudio(tune.data, tune.data_length, activeAlarm->volume);
+
+          if (cancelled) {
+            Serial.println("Alarm Reset");
+            activeAlarm.reset();
+          }
         }
       }
     }
@@ -203,6 +219,7 @@ void alarmWorker(void* parameter) {
         if (!alarmActive) continue;
 
         if (lastDaySeconds <= alarm.alarm_seconds && alarm.alarm_seconds <= daySeconds) {
+          Serial.println("Alarm Active");
           activeAlarm = alarm;
           alarmActiveEpochSeconds = epochSeconds;
         }
@@ -217,15 +234,13 @@ void alarmWorker(void* parameter) {
 
 bool initializeAlarms() {
 
-  if (!loadAlarms()) {
-    return false;
-  }
-
   if (!initializeI2S()) {
     return false;
   }
 
   if (alarmTask != nullptr) return true;
+
+  loadAlarms();
 
   if (xTaskCreate(
       alarmWorker,
@@ -259,13 +274,20 @@ bool initializeI2S() {
   return true;
 }
 
-void writeAudio(const uint8_t* audio, size_t audioLength, uint8_t alarmVolume) {
+bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t alarmVolume) {
 
+  cancelAudio();
   size_t offset = 0;
-
   uint8_t audioBuffer[AUDIO_CHUNK_SIZE];
+  const uint32_t currentAudioGeneration = audioGeneration;
+
+  Serial.println("Writing Audio");
 
   while(offset < audioLength) {
+
+    if (currentAudioGeneration != audioGeneration) {
+      return false;
+    }
 
     size_t count = min(AUDIO_CHUNK_SIZE, audioLength - offset);
     
@@ -286,11 +308,17 @@ void writeAudio(const uint8_t* audio, size_t audioLength, uint8_t alarmVolume) {
     );
 
     if (written == 0) {
-      break;
+      return true;
     }
 
     offset += written;
   }
+
+  return true;
+}
+
+void cancelAudio() {
+  audioGeneration++;
 }
 
 bool commitAlarms() {
@@ -298,6 +326,13 @@ bool commitAlarms() {
 
   if (!alarm_preferences.begin(ALARM_PREFS_NAMESPACE, false)) {
     return false;
+  }
+
+  if (alarms.empty()) {
+    const bool cleared = !alarm_preferences.isKey(ALARM_PREFS_KEY)
+      || alarm_preferences.remove(ALARM_PREFS_KEY);
+    alarm_preferences.end();
+    return cleared;
   }
 
   size_t bufferSize = alarms.size() * PACKED_ALARM_SIZE;
@@ -327,12 +362,17 @@ bool commitAlarms() {
 bool loadAlarms() {
 
   if (!alarm_preferences.begin(ALARM_PREFS_NAMESPACE, true)) {
+    Serial.println("Alarm Preferences Failed To Open.");
     return false;
   }
 
   if (!alarm_preferences.isKey(ALARM_PREFS_KEY)) {
     alarm_preferences.end();
-    Serial.println("Alarms Never Stored. Skipping...");
+    {
+      std::lock_guard<std::mutex> lock(alarmsMutex);
+      alarms.clear();
+    }
+    Serial.println("Alarms Never Stored.");
     return true;
   }
 
@@ -340,12 +380,17 @@ bool loadAlarms() {
 
   if (bufferSize == 0) {
     alarm_preferences.end();
-    Serial.println("No Alarms Stored. Skipping...");
+    {
+      std::lock_guard<std::mutex> lock(alarmsMutex);
+      alarms.clear();
+    }
+    Serial.println("No Alarms Stored.");
     return true;
   }
 
   if (bufferSize % PACKED_ALARM_SIZE != 0) {
     alarm_preferences.end();
+    Serial.println("Invalid Alarm Array Length.");
     return false;
   }
 
@@ -353,6 +398,7 @@ bool loadAlarms() {
 
   if (alarmCount > MAX_ALARMS) {
     alarm_preferences.end();
+    Serial.println("Max Alarm Count Exceeded.");
     return false;
   }
 
@@ -362,6 +408,7 @@ bool loadAlarms() {
   alarm_preferences.end();
 
   if (read != bufferSize) {
+    Serial.println("Invalid Alarm Read Length");
     return false;
   }
 

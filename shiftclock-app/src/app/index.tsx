@@ -4,42 +4,37 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   addConnectionStateListener,
-  addDeviceDiscoveredListener,
   addSettingsListener,
   connect,
-  scan,
-  stopScan,
-  writeAlarm,
-  type Alarm,
+  disconnect,
   type ClockSettingsSnapshot,
   type ConnectionStateChangedEvent,
-  type ShiftclockDevice,
 } from '../../modules/shiftclock-ble';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ActionButton } from '@/components/action-button';
+import { useAutoConnect } from '@/auto-connect/auto-connect';
 import { ClockSettingsCard } from '@/components/clock-settings-card';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-
-const PLACEHOLDER_ALARM: Alarm = {
-  daysActive: 0,
-  secondsOfDay: 0,
-  tuneId: 0,
-  rampDurationSeconds: 0,
-  volume: 0,
-  autoDisableSeconds: 0,
-};
 
 function messageFromError(cause: unknown) {
   return cause instanceof Error ? cause.message : 'BLE operation failed';
 }
 
 export default function ClockScreen() {
+  const {
+    clearTarget: clearAutoConnectTarget,
+    devices,
+    enabled: autoConnectEnabled,
+    error: autoConnectError,
+    setTarget: setAutoConnectTarget,
+    startScan,
+    target: autoConnectTarget,
+  } = useAutoConnect();
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
-  const [devices, setDevices] = useState<Record<string, ShiftclockDevice>>({});
   const [connection, setConnection] = useState<ConnectionStateChangedEvent>({
     state: 'disconnected',
     deviceId: null,
@@ -53,17 +48,12 @@ export default function ClockScreen() {
   const clockSettingsEnabled = connected && clockSettings !== null;
 
   useEffect(() => {
-    const discoveredSubscription = addDeviceDiscoveredListener((device) => {
-      setDevices((currentDevices) => ({ ...currentDevices, [device.id]: device }));
-    });
     const connectionSubscription = addConnectionStateListener(setConnection);
     const settingsSubscription = addSettingsListener(setClockSettings);
 
     return () => {
-      discoveredSubscription.remove();
       connectionSubscription.remove();
       settingsSubscription.remove();
-      void stopScan().catch(() => undefined);
     };
   }, []);
 
@@ -88,6 +78,11 @@ export default function ClockScreen() {
   const connectionSummary = connection.deviceId
     ? `${connection.state} · ${connection.deviceId}`
     : connection.state;
+  const connectedDeviceId = connection.deviceId;
+  const connectedDevice = connectedDeviceId ? devices[connectedDeviceId] : undefined;
+  const connectedTargetSelected =
+    connectedDeviceId !== null && autoConnectTarget?.id === connectedDeviceId;
+  const displayedMessage = actionMessage ?? autoConnectError;
 
   return (
     <ScrollView
@@ -103,7 +98,7 @@ export default function ClockScreen() {
         <View style={styles.heading}>
           <ThemedText type="subtitle">Shiftclock</ThemedText>
           <ThemedText themeColor="textSecondary">
-            Discover a clock, connect, and send test packets.
+            Discover a clock, connect, and adjust its settings.
           </ThemedText>
         </View>
 
@@ -111,14 +106,56 @@ export default function ClockScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             Connection
           </ThemedText>
-          <ThemedText style={styles.capitalize}>{connectionSummary}</ThemedText>
+          <View style={styles.connectionRow}>
+            <ThemedText style={styles.capitalize}>
+              {connectionSummary}
+            </ThemedText>
+            <View style={styles.connectionActions}>
+              {autoConnectEnabled && connected && connectedDeviceId !== null ? (
+                <ActionButton
+                  accessibilityLabel={
+                    connectedTargetSelected
+                      ? 'Remove auto-connect'
+                      : 'Auto-connect to this clock'
+                  }
+                  disabled={pendingAction !== null}
+                  label={
+                    pendingAction === 'auto-connect'
+                      ? 'Saving…'
+                      : connectedTargetSelected
+                        ? 'Remove auto-connect'
+                        : 'Auto-connect to this clock'
+                  }
+                  onPress={() =>
+                    void runAction(
+                      'auto-connect',
+                      connectedTargetSelected
+                        ? clearAutoConnectTarget
+                        : () =>
+                            setAutoConnectTarget({
+                              id: connectedDeviceId,
+                              name: connectedDevice?.name ?? null,
+                            }),
+                      connectedTargetSelected
+                        ? 'Auto-connect target removed'
+                        : 'This clock will auto-connect when discovered'
+                    )
+                  }
+                />
+              ) : null}
+              {connectedDeviceId !== null && connection.state !== 'disconnected' ? (
+                <ActionButton
+                  accessibilityLabel="Disconnect from clock"
+                  disabled={pendingAction !== null}
+                  label={pendingAction === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
+                  onPress={() =>
+                    void runAction('disconnect', disconnect, 'Disconnected from Shiftclock')
+                  }
+                />
+              ) : null}
+            </View>
+          </View>
         </ThemedView>
-
-        <ClockSettingsCard
-          confirmedSettings={clockSettings}
-          enabled={clockSettingsEnabled}
-          onActionMessage={setActionMessage}
-        />
 
         <View style={styles.section}>
           <View style={styles.sectionHeading}>
@@ -128,7 +165,7 @@ export default function ClockScreen() {
               disabled={pendingAction !== null}
               label={pendingAction === 'scan' ? 'Scanning…' : 'Scan for devices'}
               onPress={() =>
-                void runAction('scan', scan, 'Scanning for nearby Shiftclock devices')
+                void runAction('scan', startScan, 'Scanning for nearby Shiftclock devices')
               }
             />
           </View>
@@ -182,23 +219,20 @@ export default function ClockScreen() {
           )}
         </View>
 
-        <View style={styles.section}>
-          <ThemedText type="smallBold">Test packets</ThemedText>
-          <ThemedView type="backgroundElement" style={styles.packetCard}>
-            <ActionButton
-              accessibilityLabel="Send alarm packet"
-              disabled={!connected || pendingAction !== null}
-              label={pendingAction === 'alarm' ? 'Sending…' : 'Send alarm packet'}
-              onPress={() =>
-                void runAction('alarm', () => writeAlarm(PLACEHOLDER_ALARM), 'Alarm packet sent')
-              }
-            />
-          </ThemedView>
-        </View>
+        <ClockSettingsCard
+          confirmedSettings={clockSettings}
+          enabled={clockSettingsEnabled}
+          onActionMessage={setActionMessage}
+        />
 
-        {actionMessage ? (
+        {displayedMessage ? (
           <ThemedView type="backgroundElement" style={styles.messageCard}>
-            <ThemedText type="small">{actionMessage}</ThemedText>
+            <ThemedText
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+              type="small">
+              {displayedMessage}
+            </ThemedText>
           </ThemedView>
         ) : null}
       </ThemedView>
@@ -228,6 +262,14 @@ const styles = StyleSheet.create({
   capitalize: {
     textTransform: 'capitalize',
   },
+  connectionRow: {
+    gap: Spacing.two,
+  },
+  connectionActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
   section: {
     gap: Spacing.two,
   },
@@ -251,11 +293,6 @@ const styles = StyleSheet.create({
   deviceDetails: {
     flex: 1,
     gap: Spacing.half,
-  },
-  packetCard: {
-    gap: Spacing.two,
-    padding: Spacing.three,
-    borderRadius: Spacing.four,
   },
   messageCard: {
     padding: Spacing.three,

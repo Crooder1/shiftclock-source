@@ -8,7 +8,7 @@
 Preferences settings_preferences;
 
 SettingsEntry settings_array[] = {
-  {TIMEZONE_SETTING,      "Timezone",      "tz",  19, -12, 11, setTimezoneOffset, NULL},
+  {TIMEZONE_SETTING,      "Timezone",      "tz",  -5, -12, 11, setTimezoneOffset, NULL},
   {BRIGHTNESS_SETTING,    "Brightness",    "bri", 8,  0, 15,   onBrightnessSet, NULL},
   {SECONDS_SETTING,       "Seconds",       "sec", 0,  0, 1,    NULL, NULL},
   {MOVINGDP_SETTING,      "MovingDP",      "dp",  0,  0, 2,    NULL, NULL},
@@ -46,6 +46,7 @@ int8_t getSetting(uint8_t id) {
 bool commitSettings() {
 
   if (!settings_preferences.begin(SETTINGS_PREFS_NAMESPACE, false)) {
+    Serial.println("Settings Preferences Failed To Open");
     return false;
   }
 
@@ -53,17 +54,16 @@ bool commitSettings() {
 
     const SettingsEntry& entry = settings_array[x];
     std::string key = entry.key;
-    uint8_t value = entry.value;
+    int8_t value = entry.value;
 
-    if (settings_preferences.isKey(key.c_str())) {
-      uint8_t oldValue = settings_preferences.getUChar(key.c_str(), value);
-
-      if (value == oldValue) {
-        continue;
-      }
+    if (
+      settings_preferences.isKey(key.c_str())
+      && settings_preferences.getChar(key.c_str(), value) == value
+    ) {
+      continue;
     }
 
-    if (!settings_preferences.putUChar(key.c_str(), value)) {
+    if (!settings_preferences.putChar(key.c_str(), value)) {
       settings_preferences.end();
       return false;
     }
@@ -78,6 +78,7 @@ bool commitSettings() {
 bool loadSettings() {
 
   if (!settings_preferences.begin(SETTINGS_PREFS_NAMESPACE, true)) {
+    Serial.println("Settings Preferences Failed To Open");
     return false;
   }
 
@@ -87,7 +88,8 @@ bool loadSettings() {
     uint8_t id = entry.id;
     std::string key = entry.key;
 
-    uint8_t value = settings_preferences.getUChar(key.c_str(), entry.value);
+    const int8_t value = settings_preferences.getChar(key.c_str(), entry.value);
+
     setSetting(id, value);
   }
 

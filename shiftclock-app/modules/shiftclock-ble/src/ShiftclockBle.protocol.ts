@@ -1,16 +1,25 @@
 import { SHIFTCLOCK_BLE_PROTOCOL } from './ShiftclockBle.constants';
 import type {
   Alarm,
+  AlarmReadResponse,
   ClockSettings,
   ClockSettingsSnapshot,
   FirmwareMessage,
+  TuneReadResponse,
 } from './ShiftclockBle.types';
+
+export type AlarmMutationCommand = 'add' | 'modify' | 'remove';
+export type AlarmPersistenceCommand = 'commit' | 'reload';
 
 function isIntegerInRange(value: number, minimum: number, maximum: number): boolean {
   return Number.isInteger(value) && value >= minimum && value <= maximum;
 }
 
 export function encodeAlarm(alarm: Alarm): number[] {
+  return encodeAlarmMutation('add', 0, alarm);
+}
+
+function validateAlarm(alarm: Alarm): void {
   const ranges = SHIFTCLOCK_BLE_PROTOCOL.alarm.ranges;
 
   if (
@@ -31,11 +40,12 @@ export function encodeAlarm(alarm: Alarm): number[] {
   ) {
     throw new Error('Invalid Alarm packet fields');
   }
+}
+
+function encodeAlarmPayload(alarm: Alarm): number[] {
+  validateAlarm(alarm);
 
   return [
-    SHIFTCLOCK_BLE_PROTOCOL.header,
-    SHIFTCLOCK_BLE_PROTOCOL.alarm.commands.add,
-    0,
     alarm.daysActive,
     alarm.secondsOfDay & 0xff,
     (alarm.secondsOfDay >>> 8) & 0xff,
@@ -49,15 +59,142 @@ export function encodeAlarm(alarm: Alarm): number[] {
   ];
 }
 
+export function encodeAlarmSelection(id: number): number[] {
+  const alarm = SHIFTCLOCK_BLE_PROTOCOL.alarm;
+  if (
+    !Number.isInteger(id) ||
+    (id !== alarm.invalidId && (id < 0 || id >= alarm.maximumCount))
+  ) {
+    throw new Error('Invalid Alarm ID');
+  }
+  return [
+    SHIFTCLOCK_BLE_PROTOCOL.header,
+    alarm.commands.read,
+    id,
+    ...Array(10).fill(0),
+  ];
+}
+
+export function encodeAlarmMutation(
+  command: AlarmMutationCommand,
+  id: number,
+  alarmValue?: Alarm
+): number[] {
+  const alarm = SHIFTCLOCK_BLE_PROTOCOL.alarm;
+  const commandByte = alarm.commands[command];
+  if (!Number.isInteger(id) || id < 0 || id >= alarm.maximumCount) {
+    throw new Error('Invalid Alarm ID');
+  }
+  if (command === 'remove') {
+    return [SHIFTCLOCK_BLE_PROTOCOL.header, commandByte, id, ...Array(10).fill(0)];
+  }
+  if (alarmValue === undefined) throw new Error('Alarm fields are required');
+  return [SHIFTCLOCK_BLE_PROTOCOL.header, commandByte, id, ...encodeAlarmPayload(alarmValue)];
+}
+
+export function encodeAlarmCommand(command: AlarmPersistenceCommand): number[] {
+  return [
+    SHIFTCLOCK_BLE_PROTOCOL.header,
+    SHIFTCLOCK_BLE_PROTOCOL.alarm.commands[command],
+    ...Array(11).fill(0),
+  ];
+}
+
+function assertPacket(packet: readonly number[], size: number, label: string): void {
+  if (packet.length !== size) throw new Error(`Invalid ${label} packet size: ${packet.length}`);
+  if (packet.some((byte) => !isIntegerInRange(byte, 0, 0xff))) {
+    throw new Error(`Invalid ${label} packet byte`);
+  }
+  if (packet[0] !== SHIFTCLOCK_BLE_PROTOCOL.header) {
+    throw new Error(`Invalid ${label} packet header`);
+  }
+}
+
+function readLittleEndian(packet: readonly number[], offset: number, length: number): number {
+  let value = 0;
+  for (let index = 0; index < length; ++index) {
+    value += packet[offset + index] * 2 ** (8 * index);
+  }
+  return value;
+}
+
+export function decodeAlarmRead(
+  packet: readonly number[],
+  expected: 'count' | 'alarm'
+): AlarmReadResponse {
+  const protocol = SHIFTCLOCK_BLE_PROTOCOL.alarm;
+  assertPacket(packet, protocol.readPacketSize, 'Alarm');
+  const idOrCount = packet[1];
+  const payload = packet.slice(2);
+  if (expected === 'count') {
+    if (idOrCount > protocol.maximumCount) throw new Error('Invalid Alarm count');
+    if (payload.some((byte) => byte !== 0)) throw new Error('Invalid Alarm count payload');
+    return { kind: 'count', count: idOrCount };
+  }
+
+  const alarm: Alarm = {
+    daysActive: packet[2],
+    secondsOfDay: readLittleEndian(packet, 3, 3),
+    tuneId: packet[6],
+    rampDurationSeconds: readLittleEndian(packet, 7, 2),
+    volume: packet[9],
+    autoDisableSeconds: readLittleEndian(packet, 10, 2),
+  };
+  validateAlarm(alarm);
+  if (idOrCount >= protocol.maximumCount) throw new Error('Invalid Alarm ID');
+  return { kind: 'alarm', alarm: { id: idOrCount, ...alarm } };
+}
+
+export function encodeTuneSelection(id: number): number[] {
+  const tune = SHIFTCLOCK_BLE_PROTOCOL.tune;
+  if (!Number.isInteger(id) || (id !== tune.invalidId && (id < 0 || id >= tune.maximumCount))) {
+    throw new Error('Invalid Tune ID');
+  }
+  return [SHIFTCLOCK_BLE_PROTOCOL.header, id];
+}
+
+export function decodeTuneRead(
+  packet: readonly number[],
+  expected: 'count' | 'tune'
+): TuneReadResponse {
+  const tune = SHIFTCLOCK_BLE_PROTOCOL.tune;
+  assertPacket(packet, tune.readPacketSize, 'Tune');
+  const idOrCount = packet[tune.offsets.id];
+  const metadata = packet.slice(tune.offsets.dataLength);
+  if (expected === 'count') {
+    if (idOrCount > tune.maximumCount) throw new Error('Invalid Tune count');
+    if (metadata.some((byte) => byte !== 0)) throw new Error('Invalid Tune count metadata');
+    return { kind: 'count', count: idOrCount };
+  }
+  if (idOrCount >= tune.maximumCount) throw new Error('Invalid Tune ID');
+  const nameBytes = packet.slice(tune.offsets.name, tune.offsets.name + tune.nameSize);
+  const terminator = nameBytes.indexOf(0);
+  if (terminator < 0) throw new Error('Invalid Tune name: missing null terminator');
+  const name = String.fromCharCode(...nameBytes.slice(0, terminator));
+  const dataLength = readLittleEndian(packet, tune.offsets.dataLength, 4);
+  return {
+    kind: 'tune',
+    tune: { id: idOrCount, name, loopDurationSeconds: dataLength / tune.bytesPerSecond },
+  };
+}
+
 export function encodeSettings(settings: ClockSettings): number[] {
   if (
-    !isIntegerInRange(settings.id, 0, 0xff) ||
-    !isIntegerInRange(settings.value, 0, 0xff)
+    !isIntegerInRange(settings.id, -128, 127) ||
+    !isIntegerInRange(settings.value, -128, 127)
   ) {
     throw new Error('Invalid Settings packet fields');
   }
 
-  return [SHIFTCLOCK_BLE_PROTOCOL.header, settings.id, settings.value];
+  return [
+    SHIFTCLOCK_BLE_PROTOCOL.header,
+    settings.id & 0xff,
+    settings.value & 0xff,
+  ];
+}
+
+function decodeSignedByte(value: number): number {
+  return value <= 0x7f ? value : value - 0x100;
 }
 
 export function decodeSettings(packet: readonly number[]): ClockSettingsSnapshot {
@@ -75,13 +212,13 @@ export function decodeSettings(packet: readonly number[]): ClockSettingsSnapshot
   }
 
   const values: ClockSettingsSnapshot = {
-    timezone: packet[1],
-    brightness: packet[2],
-    seconds: packet[3],
-    movingDp: packet[4],
-    volume: packet[5],
-    clockForm: packet[6],
-    meriIndicator: packet[7],
+    timezone: decodeSignedByte(packet[1]),
+    brightness: decodeSignedByte(packet[2]),
+    seconds: decodeSignedByte(packet[3]),
+    movingDp: decodeSignedByte(packet[4]),
+    volume: decodeSignedByte(packet[5]),
+    clockForm: decodeSignedByte(packet[6]),
+    meriIndicator: decodeSignedByte(packet[7]),
   };
   const labels: Record<keyof ClockSettingsSnapshot, string> = {
     timezone: 'Timezone',

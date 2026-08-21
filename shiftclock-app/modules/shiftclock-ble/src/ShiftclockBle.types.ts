@@ -19,6 +19,29 @@ export type Alarm = {
   autoDisableSeconds: number;
 };
 
+export type AlarmRecord = Alarm & {
+  id: number;
+};
+
+export type TuneMetadata = {
+  id: number;
+  name: string;
+  loopDurationSeconds: number;
+};
+
+export type AlarmReadResponse =
+  | { kind: 'count'; count: number }
+  | { kind: 'alarm'; alarm: AlarmRecord };
+
+export type TuneReadResponse =
+  | { kind: 'count'; count: number }
+  | { kind: 'tune'; tune: TuneMetadata };
+
+export type AlarmDataSnapshot = {
+  alarms: readonly AlarmRecord[];
+  tunes: readonly TuneMetadata[];
+};
+
 export type ClockSettings = {
   id: number;
   value: number;

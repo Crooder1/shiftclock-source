@@ -4,6 +4,7 @@
 
 constexpr size_t MAX_TUNES = 32;
 constexpr size_t MAX_NAME_LENGTH = 20; // -1 for null terminator
+constexpr uint8_t INVALID_TUNE_ID = 0xFF;
 
 struct AlarmTune {
   const char* name;

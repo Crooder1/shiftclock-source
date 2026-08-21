@@ -23,6 +23,17 @@ uint8_t readByte(const uint8_t* data, size_t length, size_t offset) {
   return data[offset];
 }
 
+int8_t readSignedByte(const uint8_t* data, size_t length, size_t offset) {
+  const uint8_t value = readByte(data, length, offset);
+  return value <= INT8_MAX
+    ? static_cast<int8_t>(value)
+    : static_cast<int8_t>(static_cast<int16_t>(value) - 256);
+}
+
+uint8_t encodeSignedByte(int8_t value) {
+  return static_cast<uint8_t>(value);
+}
+
 uint32_t readInt(
     const uint8_t* data,
     size_t length,

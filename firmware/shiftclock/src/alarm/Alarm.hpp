@@ -4,7 +4,7 @@
 
 #include <Arduino.h>
 
-constexpr size_t INVALID_ALARM_INDEX = 0xFF; 
+constexpr uint8_t INVALID_ALARM_ID = 0xFF;
 constexpr size_t MAX_ALARMS = 32;
 constexpr size_t PACKED_ALARM_SIZE = 10;
 
@@ -73,7 +73,9 @@ bool removeAlarm(uint8_t id);
 bool initializeAlarms();
 bool initializeI2S();
 
-void writeAudio(const uint8_t* audio, size_t audioLength, uint8_t volume);
+// Returns true for finished, false for cancelled
+bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t volume);
+void cancelAudio();
 
 bool loadAlarms();
 bool commitAlarms();

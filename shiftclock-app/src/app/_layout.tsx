@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { AutoConnectProvider, useAutoConnect } from '@/auto-connect/auto-connect';
 import AppTabs from '@/components/app-tabs';
 import { AppThemeProvider, useAppTheme } from '@/theme/app-theme';
 
@@ -11,21 +12,24 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   return (
     <AppThemeProvider>
-      <ThemedRootLayout />
+      <AutoConnectProvider>
+        <ThemedRootLayout />
+      </AutoConnectProvider>
     </AppThemeProvider>
   );
 }
 
 function ThemedRootLayout() {
   const { hydrated, mode } = useAppTheme();
+  const { hydrated: autoConnectHydrated } = useAutoConnect();
 
   useEffect(() => {
-    if (hydrated) {
+    if (hydrated && autoConnectHydrated) {
       void SplashScreen.hideAsync();
     }
-  }, [hydrated]);
+  }, [autoConnectHydrated, hydrated]);
 
-  if (!hydrated) {
+  if (!hydrated || !autoConnectHydrated) {
     return null;
   }
 

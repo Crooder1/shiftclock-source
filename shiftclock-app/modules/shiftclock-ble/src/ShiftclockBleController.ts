@@ -1,17 +1,25 @@
 import { SHIFTCLOCK_BLE_PROTOCOL, SHIFTCLOCK_BLE_UUIDS } from './ShiftclockBle.constants';
 import {
+  decodeAlarmRead,
   decodeMessage,
   decodeSettings,
-  encodeAlarm,
+  decodeTuneRead,
+  encodeAlarmCommand,
+  encodeAlarmMutation,
+  encodeAlarmSelection,
   encodeSettings,
+  encodeTuneSelection,
 } from './ShiftclockBle.protocol';
 import type {
   Alarm,
+  AlarmDataSnapshot,
+  AlarmRecord,
   ClockSettings,
   ClockSettingsSnapshot,
   ConnectionStateChangedEvent,
   FirmwareMessage,
   ShiftclockDevice,
+  TuneMetadata,
 } from './ShiftclockBle.types';
 
 export type BleManagerSubscription = { remove(): void };
@@ -91,9 +99,9 @@ type Listener<T> = (value: T) => void;
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const BLE_STATE_TIMEOUT_MS = 5_000;
-const SETTINGS_ACKNOWLEDGEMENT_TIMEOUT_MS = 1_000;
+const OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS = 1_000;
 
-type SettingsAcknowledgement = {
+type OperationAcknowledgement = {
   deviceId: string;
   connectionGeneration: number;
   resolve: () => void;
@@ -123,6 +131,8 @@ export class ShiftclockBleController {
   private readonly connectionListeners = new Set<Listener<ConnectionStateChangedEvent>>();
   private readonly messageListeners = new Set<Listener<FirmwareMessage>>();
   private readonly settingsListeners = new Set<Listener<ClockSettingsSnapshot | null>>();
+  private readonly alarmListeners = new Set<Listener<readonly AlarmRecord[] | null>>();
+  private readonly tuneListeners = new Set<Listener<readonly TuneMetadata[] | null>>();
   private readonly bleStateWaiters = new Set<Listener<string>>();
   private startPromise: Promise<void> | null = null;
   private listenersInstalled = false;
@@ -137,9 +147,11 @@ export class ShiftclockBleController {
     deviceId: null,
   };
   private currentSettings: ClockSettingsSnapshot | null = null;
+  private currentAlarms: readonly AlarmRecord[] | null = null;
+  private currentTunes: readonly TuneMetadata[] | null = null;
   private connectionGeneration = 0;
   private writeQueue: Promise<void> = Promise.resolve();
-  private settingsAcknowledgement: SettingsAcknowledgement | null = null;
+  private operationAcknowledgement: OperationAcknowledgement | null = null;
 
   constructor(
     private readonly manager: BleManagerClient,
@@ -168,6 +180,22 @@ export class ShiftclockBleController {
   ): ShiftclockBleSubscription {
     const subscription = addListener(this.settingsListeners, listener);
     listener(this.currentSettings);
+    return subscription;
+  }
+
+  addAlarmListener(
+    listener: Listener<readonly AlarmRecord[] | null>
+  ): ShiftclockBleSubscription {
+    const subscription = addListener(this.alarmListeners, listener);
+    listener(this.currentAlarms);
+    return subscription;
+  }
+
+  addTuneListener(
+    listener: Listener<readonly TuneMetadata[] | null>
+  ): ShiftclockBleSubscription {
+    const subscription = addListener(this.tuneListeners, listener);
+    listener(this.currentTunes);
     return subscription;
   }
 
@@ -227,6 +255,8 @@ export class ShiftclockBleController {
 
     const generation = ++this.connectionGeneration;
     this.emitSettings(null);
+    this.emitAlarms(null);
+    this.emitTunes(null);
     this.pendingDeviceId = deviceId;
     this.emitConnection({ state: 'connecting', deviceId });
     let nativeConnectionStarted = false;
@@ -287,6 +317,8 @@ export class ShiftclockBleController {
         : true;
       if (nativeDisconnected) {
         this.emitSettings(null);
+        this.emitAlarms(null);
+        this.emitTunes(null);
         if (this.pendingDeviceId === deviceId) {
           this.pendingDeviceId = null;
         }
@@ -321,6 +353,8 @@ export class ShiftclockBleController {
     if (!needsNativeDisconnect) {
       this.pendingDeviceId = null;
       this.emitSettings(null);
+      this.emitAlarms(null);
+      this.emitTunes(null);
       this.emitConnection({ state: 'disconnected', deviceId });
       return;
     }
@@ -372,21 +406,65 @@ export class ShiftclockBleController {
       this.nativeConnectingDeviceId = null;
     }
     this.emitSettings(null);
+    this.emitAlarms(null);
+    this.emitTunes(null);
     if (this.currentConnection.state !== 'disconnected') {
       this.emitConnection({ state: 'disconnected', deviceId });
     }
   }
 
   async writeAlarm(alarm: Alarm): Promise<void> {
-    const packet = encodeAlarm(alarm);
-    await this.enqueueConnectedOperation(async (deviceId) => {
-      await this.manager.write(
+    await this.createAlarm(alarm);
+  }
+
+  async reloadAlarmData(): Promise<AlarmDataSnapshot> {
+    return this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
+      const tunes = await this.readTunes(deviceId, connectionGeneration);
+      const alarms = await this.readAlarms(deviceId, connectionGeneration);
+      this.emitTunes(tunes);
+      this.emitAlarms(alarms);
+      return { alarms, tunes };
+    });
+  }
+
+  async createAlarm(alarm: Alarm): Promise<readonly AlarmRecord[]> {
+    return this.mutateAlarm('add', 0, alarm);
+  }
+
+  async modifyAlarm(id: number, alarm: Alarm): Promise<readonly AlarmRecord[]> {
+    return this.mutateAlarm('modify', id, alarm);
+  }
+
+  async removeAlarm(id: number): Promise<readonly AlarmRecord[]> {
+    return this.mutateAlarm('remove', id);
+  }
+
+  async commitAlarms(): Promise<void> {
+    await this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
+      await this.writeAcknowledged(
         deviceId,
-        SHIFTCLOCK_BLE_UUIDS.clockService,
+        connectionGeneration,
         SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic,
-        packet,
-        SHIFTCLOCK_BLE_PROTOCOL.alarm.packetSize
+        encodeAlarmCommand('commit'),
+        SHIFTCLOCK_BLE_PROTOCOL.alarm.packetSize,
+        'Alarm commit'
       );
+    });
+  }
+
+  async reloadAlarms(): Promise<readonly AlarmRecord[]> {
+    return this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
+      await this.writeAcknowledged(
+        deviceId,
+        connectionGeneration,
+        SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic,
+        encodeAlarmCommand('reload'),
+        SHIFTCLOCK_BLE_PROTOCOL.alarm.packetSize,
+        'Alarm reload'
+      );
+      const alarms = await this.readAlarms(deviceId, connectionGeneration);
+      this.emitAlarms(alarms);
+      return alarms;
     });
   }
 
@@ -492,6 +570,8 @@ export class ShiftclockBleController {
       this.nativeConnectingDeviceId = null;
       this.activeDeviceId = null;
       this.emitSettings(null);
+      this.emitAlarms(null);
+      this.emitTunes(null);
       this.emitConnection({ state: 'disconnected', deviceId: event.peripheral });
     });
     this.manager.onDidUpdateValueForCharacteristic((event) => {
@@ -560,6 +640,7 @@ export class ShiftclockBleController {
       ['Alarm', SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic],
       ['Settings', SHIFTCLOCK_BLE_UUIDS.settingsCharacteristic],
       ['Message', SHIFTCLOCK_BLE_UUIDS.messageCharacteristic],
+      ['Tune', SHIFTCLOCK_BLE_UUIDS.tuneCharacteristic],
     ] as const;
 
     for (const [label, characteristicUuid] of required) {
@@ -590,7 +671,12 @@ export class ShiftclockBleController {
         message.type === SHIFTCLOCK_BLE_PROTOCOL.message.infoOperationSucceeded.type &&
         message.code === SHIFTCLOCK_BLE_PROTOCOL.message.infoOperationSucceeded.code
       ) {
-        this.resolveSettingsAcknowledgement(event.peripheral);
+        this.resolveOperationAcknowledgement(event.peripheral);
+      } else if (
+        message.type === SHIFTCLOCK_BLE_PROTOCOL.message.errorOperationFailed.type &&
+        message.code === SHIFTCLOCK_BLE_PROTOCOL.message.errorOperationFailed.code
+      ) {
+        this.rejectOperationAcknowledgement(new Error(message.description));
       }
       this.emit(this.messageListeners, message);
     } catch {
@@ -605,6 +691,132 @@ export class ShiftclockBleController {
       SHIFTCLOCK_BLE_UUIDS.settingsCharacteristic
     );
     return decodeSettings(packet);
+  }
+
+  private async readTunes(
+    deviceId: string,
+    connectionGeneration: number
+  ): Promise<readonly TuneMetadata[]> {
+    await this.writeAcknowledged(
+      deviceId,
+      connectionGeneration,
+      SHIFTCLOCK_BLE_UUIDS.tuneCharacteristic,
+      encodeTuneSelection(SHIFTCLOCK_BLE_PROTOCOL.tune.invalidId),
+      SHIFTCLOCK_BLE_PROTOCOL.tune.writePacketSize,
+      'Tune count selection'
+    );
+    this.assertActiveOperation(deviceId, connectionGeneration);
+    const countPacket = await this.manager.read(
+      deviceId,
+      SHIFTCLOCK_BLE_UUIDS.clockService,
+      SHIFTCLOCK_BLE_UUIDS.tuneCharacteristic
+    );
+    this.assertActiveOperation(deviceId, connectionGeneration);
+    const countResponse = decodeTuneRead(countPacket, 'count');
+    if (countResponse.kind !== 'count') throw new Error('Expected Tune count');
+
+    const tunes: TuneMetadata[] = [];
+    for (let id = 0; id < countResponse.count; ++id) {
+      await this.writeAcknowledged(
+        deviceId,
+        connectionGeneration,
+        SHIFTCLOCK_BLE_UUIDS.tuneCharacteristic,
+        encodeTuneSelection(id),
+        SHIFTCLOCK_BLE_PROTOCOL.tune.writePacketSize,
+        `Tune ${id} selection`
+      );
+      this.assertActiveOperation(deviceId, connectionGeneration);
+      const packet = await this.manager.read(
+        deviceId,
+        SHIFTCLOCK_BLE_UUIDS.clockService,
+        SHIFTCLOCK_BLE_UUIDS.tuneCharacteristic
+      );
+      this.assertActiveOperation(deviceId, connectionGeneration);
+      const response = decodeTuneRead(packet, 'tune');
+      if (response.kind !== 'tune' || response.tune.id !== id) {
+        throw new Error(`Unexpected Tune ID while reading ${id}`);
+      }
+      tunes.push(response.tune);
+    }
+    return tunes;
+  }
+
+  private async readAlarms(
+    deviceId: string,
+    connectionGeneration: number
+  ): Promise<readonly AlarmRecord[]> {
+    await this.writeAcknowledged(
+      deviceId,
+      connectionGeneration,
+      SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic,
+      encodeAlarmSelection(SHIFTCLOCK_BLE_PROTOCOL.alarm.invalidId),
+      SHIFTCLOCK_BLE_PROTOCOL.alarm.packetSize,
+      'Alarm count selection'
+    );
+    this.assertActiveOperation(deviceId, connectionGeneration);
+    const countPacket = await this.manager.read(
+      deviceId,
+      SHIFTCLOCK_BLE_UUIDS.clockService,
+      SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic
+    );
+    this.assertActiveOperation(deviceId, connectionGeneration);
+    const countResponse = decodeAlarmRead(countPacket, 'count');
+    if (countResponse.kind !== 'count') throw new Error('Expected Alarm count');
+
+    const alarms: AlarmRecord[] = [];
+    for (let id = 0; id < countResponse.count; ++id) {
+      await this.writeAcknowledged(
+        deviceId,
+        connectionGeneration,
+        SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic,
+        encodeAlarmSelection(id),
+        SHIFTCLOCK_BLE_PROTOCOL.alarm.packetSize,
+        `Alarm ${id} selection`
+      );
+      this.assertActiveOperation(deviceId, connectionGeneration);
+      const packet = await this.manager.read(
+        deviceId,
+        SHIFTCLOCK_BLE_UUIDS.clockService,
+        SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic
+      );
+      this.assertActiveOperation(deviceId, connectionGeneration);
+      const response = decodeAlarmRead(packet, 'alarm');
+      if (response.kind !== 'alarm' || response.alarm.id !== id) {
+        throw new Error(`Unexpected Alarm ID while reading ${id}`);
+      }
+      alarms.push(response.alarm);
+    }
+    return alarms;
+  }
+
+  private mutateAlarm(
+    command: 'add' | 'modify' | 'remove',
+    id: number,
+    alarm?: Alarm
+  ): Promise<readonly AlarmRecord[]> {
+    const packet = encodeAlarmMutation(command, id, alarm);
+    return this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
+      await this.writeAcknowledged(
+        deviceId,
+        connectionGeneration,
+        SHIFTCLOCK_BLE_UUIDS.alarmCharacteristic,
+        packet,
+        SHIFTCLOCK_BLE_PROTOCOL.alarm.packetSize,
+        `Alarm ${command}`
+      );
+      const alarms = await this.readAlarms(deviceId, connectionGeneration);
+      this.emitAlarms(alarms);
+      return alarms;
+    });
+  }
+
+  private assertActiveOperation(deviceId: string, connectionGeneration: number): void {
+    if (
+      this.activeDeviceId !== deviceId ||
+      this.connectionGeneration !== connectionGeneration
+    ) {
+      throw new Error('Shiftclock connection changed during operation');
+    }
   }
 
   private enqueueConnectedOperation<T>(
@@ -651,60 +863,77 @@ export class ShiftclockBleController {
     afterAcknowledgement: (deviceId: string) => Promise<T>
   ): Promise<T> {
     return this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
-      const acknowledgement = this.waitForSettingsAcknowledgement(
+      await this.writeAcknowledged(
         deviceId,
         connectionGeneration,
+        SHIFTCLOCK_BLE_UUIDS.settingsCharacteristic,
+        packet,
+        SHIFTCLOCK_BLE_PROTOCOL.settings.packetSize,
         operationName
       );
-
-      try {
-        await Promise.all([
-          this.manager.write(
-            deviceId,
-            SHIFTCLOCK_BLE_UUIDS.clockService,
-            SHIFTCLOCK_BLE_UUIDS.settingsCharacteristic,
-            packet,
-            SHIFTCLOCK_BLE_PROTOCOL.settings.packetSize
-          ),
-          acknowledgement,
-        ]);
-      } catch (cause) {
-        this.rejectSettingsAcknowledgement(
-          cause instanceof Error ? cause : new Error(String(cause))
-        );
-        throw cause;
-      }
-
       return afterAcknowledgement(deviceId);
     });
   }
 
-  private waitForSettingsAcknowledgement(
+  private async writeAcknowledged(
+    deviceId: string,
+    connectionGeneration: number,
+    characteristicUuid: string,
+    packet: number[],
+    maxByteSize: number,
+    operationName: string
+  ): Promise<void> {
+    this.assertActiveOperation(deviceId, connectionGeneration);
+    const acknowledgement = this.waitForOperationAcknowledgement(
+      deviceId,
+      connectionGeneration,
+      operationName
+    );
+    try {
+      await Promise.all([
+        this.manager.write(
+          deviceId,
+          SHIFTCLOCK_BLE_UUIDS.clockService,
+          characteristicUuid,
+          packet,
+          maxByteSize
+        ),
+        acknowledgement,
+      ]);
+    } catch (cause) {
+      this.rejectOperationAcknowledgement(
+        cause instanceof Error ? cause : new Error(String(cause))
+      );
+      throw cause;
+    }
+  }
+
+  private waitForOperationAcknowledgement(
     deviceId: string,
     connectionGeneration: number,
     operationName: string
   ): Promise<void> {
-    if (this.settingsAcknowledgement !== null) {
-      return Promise.reject(new Error('Another Settings acknowledgement is pending'));
+    if (this.operationAcknowledgement !== null) {
+      return Promise.reject(new Error('Another operation acknowledgement is pending'));
     }
 
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (
-          this.settingsAcknowledgement?.deviceId !== deviceId ||
-          this.settingsAcknowledgement.connectionGeneration !== connectionGeneration
+          this.operationAcknowledgement?.deviceId !== deviceId ||
+          this.operationAcknowledgement.connectionGeneration !== connectionGeneration
         ) {
           return;
         }
-        this.settingsAcknowledgement = null;
+        this.operationAcknowledgement = null;
         reject(
           new Error(
-            `${operationName} timed out after ${SETTINGS_ACKNOWLEDGEMENT_TIMEOUT_MS} ms`
+            `${operationName} timed out after ${OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS} ms`
           )
         );
-      }, SETTINGS_ACKNOWLEDGEMENT_TIMEOUT_MS);
+      }, OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS);
 
-      this.settingsAcknowledgement = {
+      this.operationAcknowledgement = {
         deviceId,
         connectionGeneration,
         resolve,
@@ -714,8 +943,8 @@ export class ShiftclockBleController {
     });
   }
 
-  private resolveSettingsAcknowledgement(deviceId: string): void {
-    const acknowledgement = this.settingsAcknowledgement;
+  private resolveOperationAcknowledgement(deviceId: string): void {
+    const acknowledgement = this.operationAcknowledgement;
     if (
       acknowledgement === null ||
       acknowledgement.deviceId !== deviceId ||
@@ -725,25 +954,25 @@ export class ShiftclockBleController {
     }
 
     clearTimeout(acknowledgement.timeout);
-    this.settingsAcknowledgement = null;
+    this.operationAcknowledgement = null;
     acknowledgement.resolve();
   }
 
-  private rejectSettingsAcknowledgement(cause: Error): void {
-    const acknowledgement = this.settingsAcknowledgement;
+  private rejectOperationAcknowledgement(cause: Error): void {
+    const acknowledgement = this.operationAcknowledgement;
     if (acknowledgement === null) {
       return;
     }
 
     clearTimeout(acknowledgement.timeout);
-    this.settingsAcknowledgement = null;
+    this.operationAcknowledgement = null;
     acknowledgement.reject(cause);
   }
 
   private changeConnectionGeneration(): void {
     this.connectionGeneration += 1;
-    this.rejectSettingsAcknowledgement(
-      new Error('Shiftclock connection changed during Settings operation')
+    this.rejectOperationAcknowledgement(
+      new Error('Shiftclock connection changed during operation')
     );
   }
 
@@ -792,6 +1021,18 @@ export class ShiftclockBleController {
     if (this.currentSettings === settings) return;
     this.currentSettings = settings;
     this.emit(this.settingsListeners, settings);
+  }
+
+  private emitAlarms(alarms: readonly AlarmRecord[] | null): void {
+    if (this.currentAlarms === alarms) return;
+    this.currentAlarms = alarms;
+    this.emit(this.alarmListeners, alarms);
+  }
+
+  private emitTunes(tunes: readonly TuneMetadata[] | null): void {
+    if (this.currentTunes === tunes) return;
+    this.currentTunes = tunes;
+    this.emit(this.tuneListeners, tunes);
   }
 
   private emit<T>(listeners: Set<Listener<T>>, value: T): void {

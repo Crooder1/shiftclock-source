@@ -14,11 +14,14 @@ import {
 import { requestBlePermissions } from './ShiftclockBle.permissions';
 import type {
   Alarm,
+  AlarmDataSnapshot,
+  AlarmRecord,
   ClockSettings,
   ClockSettingsSnapshot,
   ConnectionStateChangedEvent,
   FirmwareMessage,
   ShiftclockDevice,
+  TuneMetadata,
 } from './ShiftclockBle.types';
 
 const platform: ShiftclockPlatform =
@@ -59,6 +62,30 @@ export function writeAlarm(alarm: Alarm): Promise<void> {
   return controller.writeAlarm(alarm);
 }
 
+export function reloadAlarmData(): Promise<AlarmDataSnapshot> {
+  return controller.reloadAlarmData();
+}
+
+export function createAlarm(alarm: Alarm): Promise<readonly AlarmRecord[]> {
+  return controller.createAlarm(alarm);
+}
+
+export function modifyAlarm(id: number, alarm: Alarm): Promise<readonly AlarmRecord[]> {
+  return controller.modifyAlarm(id, alarm);
+}
+
+export function removeAlarm(id: number): Promise<readonly AlarmRecord[]> {
+  return controller.removeAlarm(id);
+}
+
+export function commitAlarms(): Promise<void> {
+  return controller.commitAlarms();
+}
+
+export function reloadAlarms(): Promise<readonly AlarmRecord[]> {
+  return controller.reloadAlarms();
+}
+
 export function writeSettings(settings: ClockSettings): Promise<void> {
   return controller.writeSettings(settings);
 }
@@ -93,4 +120,16 @@ export function addSettingsListener(
   listener: (settings: ClockSettingsSnapshot | null) => void
 ): ShiftclockBleSubscription {
   return controller.addSettingsListener(listener);
+}
+
+export function addAlarmListener(
+  listener: (alarms: readonly AlarmRecord[] | null) => void
+): ShiftclockBleSubscription {
+  return controller.addAlarmListener(listener);
+}
+
+export function addTuneListener(
+  listener: (tunes: readonly TuneMetadata[] | null) => void
+): ShiftclockBleSubscription {
+  return controller.addTuneListener(listener);
 }
