@@ -280,6 +280,7 @@ IRAM_ATTR void onBtn3PressISR() {
   btn3_status = true;
 }
 
+// @Scope Variable
 volatile uint8_t lastState = 0;
 
 IRAM_ATTR void encoderISR() {
