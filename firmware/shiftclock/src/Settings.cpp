@@ -53,8 +53,12 @@ bool commitSettings() {
   for (uint8_t x = 0; x < SETTINGS_COUNT; x++) {
 
     const SettingsEntry& entry = settings_array[x];
-    std::string key = entry.key;
-    int8_t value = entry.value;
+    const std::string key = entry.key;
+    const int8_t value = entry.value;
+
+    if (settings_preferences.getType(key.c_str()) != PT_I8) {
+      settings_preferences.remove(key.c_str());
+    }
 
     if (
       settings_preferences.isKey(key.c_str())
@@ -85,10 +89,10 @@ bool loadSettings() {
   for (uint8_t x = 0; x < SETTINGS_COUNT; x++) {
 
     SettingsEntry& entry = settings_array[x];
-    uint8_t id = entry.id;
-    std::string key = entry.key;
+    const uint8_t id = entry.id;
+    const std::string key = entry.key;
 
-    const int8_t value = settings_preferences.getChar(key.c_str(), entry.value);
+    int8_t value = settings_preferences.getChar(key.c_str(), entry.value);
 
     setSetting(id, value);
   }

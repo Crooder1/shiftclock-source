@@ -19,3 +19,10 @@ bool getTune(AlarmTune& tune, uint8_t id) {
   tune = tune_array.at(id);
   return true;
 }
+
+// sampleRate: 16000 bytes/second
+// bitDepth  : 2 bytes/sample
+// channels  : 1
+uint32_t getTuneDurationMs(const AlarmTune& tune) {
+  return (tune.data_length * 1000ULL) / 32000;
+}

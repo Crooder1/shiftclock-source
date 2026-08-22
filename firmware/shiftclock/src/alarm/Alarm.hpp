@@ -74,7 +74,7 @@ bool initializeAlarms();
 bool initializeI2S();
 
 // Returns true for finished, false for cancelled
-bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t volume);
+bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t initialVolume, uint8_t finalVolume);
 void cancelAudio();
 
 bool loadAlarms();

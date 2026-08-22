@@ -184,32 +184,11 @@ void alarmWorker(void* parameter) {
     uint32_t daySeconds = local.tm_sec + local.tm_min * 60UL + local.tm_hour * 3600UL;
     uint32_t epochSeconds = (uint32_t)now;
 
-    if (activeAlarm.has_value()) {
-
-      if (epochSeconds - alarmActiveEpochSeconds > activeAlarm->auto_disable_seconds) {
-        Serial.println("Alarm Timed Out");
-        activeAlarm.reset();
-        alarmActiveEpochSeconds = 0;
-      } else if (i2SInitialized) {
-        
-        AlarmTune tune;
-
-        if (getTune(tune, activeAlarm->tune_id)) {
-          
-          bool cancelled = !writeAudio(tune.data, tune.data_length, activeAlarm->volume);
-
-          if (cancelled) {
-            Serial.println("Alarm Reset");
-            activeAlarm.reset();
-          }
-        }
-      }
-    }
-
+    // Check active alarms
     {
       std::lock_guard<std::mutex> lock(alarmsMutex);
 
-      for (size_t x = 0; x < min(MAX_ALARMS, alarms.size()); x++) {
+      for (size_t x = 0; x < std::min(MAX_ALARMS, alarms.size()); x++) {
 
         if (activeAlarm.has_value()) break;
 
@@ -226,10 +205,46 @@ void alarmWorker(void* parameter) {
       }
     }
 
+    // Play audio
+    if (activeAlarm.has_value()) {
+
+      uint32_t elapsedEpochSeconds = epochSeconds - alarmActiveEpochSeconds;
+
+      if (activeAlarm->auto_disable_seconds > 0 && elapsedEpochSeconds > activeAlarm->auto_disable_seconds) {
+        Serial.println("Alarm Timed Out");
+        activeAlarm.reset();
+        alarmActiveEpochSeconds = 0;
+      } else if (i2SInitialized) {
+        
+        AlarmTune tune;
+
+        if (getTune(tune, activeAlarm->tune_id)) {
+          
+          uint8_t initialVolume;
+          uint8_t finalVolume;
+
+          // no ramp
+          if (activeAlarm->alarm_ramp == 0)  {
+            initialVolume = activeAlarm->volume;
+            finalVolume = activeAlarm->volume;
+          } else {
+            initialVolume = activeAlarm->volume * std::clamp((float)elapsedEpochSeconds / (float)activeAlarm->alarm_ramp, 0.0f, 1.0f);
+            finalVolume = activeAlarm->volume * std::clamp((elapsedEpochSeconds * 1000.0f + getTuneDurationMs(tune)) / (activeAlarm->alarm_ramp * 1000.0f), 0.0f, 1.0f);
+          }
+
+          bool cancelled = !writeAudio(tune.data, tune.data_length, initialVolume, finalVolume);
+
+          if (cancelled) {
+            Serial.println("Alarm Reset");
+            activeAlarm.reset();
+          }
+        }
+      }
+    }
+
     lastDaySeconds = daySeconds;
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
-
 }
 
 bool initializeAlarms() {
@@ -264,17 +279,17 @@ bool initializeI2S() {
   I2S.setPins(BCLK_PIN, WS_PIN, DOUT_PIN);
 
   if (!I2S.begin(
-      I2S_MODE_STD,
-      16000,
-      I2S_DATA_BIT_WIDTH_16BIT,
-      I2S_SLOT_MODE_MONO
+    I2S_MODE_STD,
+    16000,
+    I2S_DATA_BIT_WIDTH_16BIT,
+    I2S_SLOT_MODE_MONO
   )) return false;
 
   i2SInitialized = true;
   return true;
 }
 
-bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t alarmVolume) {
+bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t initialVolume, uint8_t finalVolume) {
 
   cancelAudio();
   size_t offset = 0;
@@ -289,14 +304,16 @@ bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t alarmVolume) {
       return false;
     }
 
-    size_t count = min(AUDIO_CHUNK_SIZE, audioLength - offset);
+    size_t count = std::min(AUDIO_CHUNK_SIZE, audioLength - offset);
     
-    float volume = (alarmVolume / 100.0f) * (getSetting(VOLUME_SETTING) / 100.0f);
+    float playbackProgress = ((float)offset) / ((float)(audioLength));
+    float rampVolume = ((1 - playbackProgress) * (float)initialVolume) + (playbackProgress * (float)finalVolume); 
+    float audioVolume = std::clamp(rampVolume / 100.0f * getSetting(VOLUME_SETTING) / 100.0f, 0.0f, 1.0f);
 
     // scale as uint16_t
     for (size_t x = 0; x < count; x += 2) {
 
-      int16_t sample = ((int16_t)(audio[offset + x]) + (int16_t)(audio[offset + x + 1] << 8)) * volume;
+      int16_t sample = ((int16_t)(audio[offset + x]) + (int16_t)(audio[offset + x + 1] << 8)) * audioVolume;
 
       audioBuffer[x] = (sample) & 0xFF;
       audioBuffer[x + 1] = (sample >> 8) & 0xFF;
@@ -417,7 +434,7 @@ bool loadAlarms() {
 
     alarms.clear();
 
-    for (size_t x = 0; x < min(alarmCount, MAX_ALARMS); x++) {
+    for (size_t x = 0; x < std::min(alarmCount, MAX_ALARMS); x++) {
 
       uint8_t alarmBuffer[PACKED_ALARM_SIZE];
       memcpy(alarmBuffer, buffer + x * PACKED_ALARM_SIZE, PACKED_ALARM_SIZE);

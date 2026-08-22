@@ -14,3 +14,4 @@ struct AlarmTune {
 
 size_t getTuneCount();
 bool getTune(AlarmTune& tune, uint8_t id);
+uint32_t getTuneDurationMs(const AlarmTune& tune);
