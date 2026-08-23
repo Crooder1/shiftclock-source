@@ -1,8 +1,8 @@
 #include "Alarm.hpp"
+#include "AudioCommandQueue.hpp"
 
 #include "../Settings.hpp"
 
-#include <atomic>
 #include <optional>
 #include <Preferences.h>
 #include <cstring>
@@ -25,7 +25,39 @@ std::mutex alarmsMutex;
 
 TaskHandle_t alarmTask = nullptr;
 
-std::atomic<uint32_t> audioGeneration = 0;
+constexpr size_t AUDIO_COMMAND_QUEUE_SIZE = 4;
+AudioCommandQueue<AUDIO_COMMAND_QUEUE_SIZE> audioCommands;
+std::mutex audioCommandsMutex;
+
+bool queueAudioCommand(const AudioCommand& command) {
+  if (alarmTask == nullptr) return false;
+
+  {
+    std::lock_guard<std::mutex> lock(audioCommandsMutex);
+    if (!audioCommands.pushPlay(command)) return false;
+  }
+
+  xTaskNotifyGive(alarmTask);
+  return true;
+}
+
+bool takeAudioCommand(AudioCommand& command) {
+  std::lock_guard<std::mutex> lock(audioCommandsMutex);
+  return audioCommands.pop(command);
+}
+
+bool hasPendingAudioCommand() {
+  std::lock_guard<std::mutex> lock(audioCommandsMutex);
+  return !audioCommands.empty();
+}
+
+// Returns true for finished, false when a newer audio command is pending.
+bool writeAudio(
+  const uint8_t* audio,
+  size_t audioLength,
+  uint8_t initialVolume,
+  uint8_t finalVolume
+);
 
 } // namespace
 
@@ -175,6 +207,27 @@ void alarmWorker(void* parameter) {
   uint32_t alarmActiveEpochSeconds = 0;
 
   while (true) {
+    AudioCommand audioCommand;
+    if (takeAudioCommand(audioCommand)) {
+      if (activeAlarm.has_value()) {
+        Serial.println("Alarm Reset");
+        activeAlarm.reset();
+        alarmActiveEpochSeconds = 0;
+      }
+
+      if (audioCommand.type == AudioCommandType::PlayTune) {
+        AlarmTune tune;
+        if (getTune(tune, audioCommand.tuneId)) {
+          writeAudio(tune.data, tune.data_length, 100, 100);
+        }
+
+        if (audioCommand.onComplete != nullptr) {
+          audioCommand.onComplete();
+        }
+      }
+
+      continue;
+    }
     
     now = time(nullptr);
     localtime_r(&now, &local);
@@ -227,6 +280,7 @@ void alarmWorker(void* parameter) {
           if (activeAlarm->alarm_ramp == 0)  {
             initialVolume = activeAlarm->volume;
             finalVolume = activeAlarm->volume;
+          // ramp
           } else {
             initialVolume = activeAlarm->volume * std::clamp((float)elapsedEpochSeconds / (float)activeAlarm->alarm_ramp, 0.0f, 1.0f);
             finalVolume = activeAlarm->volume * std::clamp((elapsedEpochSeconds * 1000.0f + getTuneDurationMs(tune)) / (activeAlarm->alarm_ramp * 1000.0f), 0.0f, 1.0f);
@@ -243,7 +297,7 @@ void alarmWorker(void* parameter) {
     }
 
     lastDaySeconds = daySeconds;
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
   }
 }
 
@@ -289,18 +343,23 @@ bool initializeI2S() {
   return true;
 }
 
-bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t initialVolume, uint8_t finalVolume) {
+namespace {
 
-  cancelAudio();
+bool writeAudio(
+  const uint8_t* audio,
+  size_t audioLength,
+  uint8_t initialVolume,
+  uint8_t finalVolume
+) {
+
   size_t offset = 0;
   uint8_t audioBuffer[AUDIO_CHUNK_SIZE];
-  const uint32_t currentAudioGeneration = audioGeneration;
 
   Serial.println("Writing Audio");
 
   while(offset < audioLength) {
 
-    if (currentAudioGeneration != audioGeneration) {
+    if (hasPendingAudioCommand()) {
       return false;
     }
 
@@ -334,8 +393,26 @@ bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t initialVolume,
   return true;
 }
 
-void cancelAudio() {
-  audioGeneration++;
+} // namespace
+
+bool queueTunePreview(uint8_t tuneId, AudioCompletionCallback onComplete) {
+  if (tuneId >= getTuneCount()) return false;
+  return queueAudioCommand({AudioCommandType::PlayTune, tuneId, onComplete});
+}
+
+bool cancelAudio() {
+  if (alarmTask == nullptr) return false;
+
+  bool queued;
+  {
+    std::lock_guard<std::mutex> lock(audioCommandsMutex);
+    queued = audioCommands.pushStop();
+  }
+
+  if (!queued) return false;
+
+  xTaskNotifyGive(alarmTask);
+  return true;
 }
 
 bool commitAlarms() {

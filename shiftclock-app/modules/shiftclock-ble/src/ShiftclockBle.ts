@@ -66,6 +66,14 @@ export function reloadAlarmData(): Promise<AlarmDataSnapshot> {
   return controller.reloadAlarmData();
 }
 
+export function playTune(id: number): Promise<void> {
+  return controller.playTune(id);
+}
+
+export function cancelTunePreview(): Promise<void> {
+  return controller.cancelTunePreview();
+}
+
 export function createAlarm(alarm: Alarm): Promise<readonly AlarmRecord[]> {
   return controller.createAlarm(alarm);
 }

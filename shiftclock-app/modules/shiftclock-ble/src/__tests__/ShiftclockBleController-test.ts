@@ -334,8 +334,8 @@ describe('ShiftclockBleController', () => {
     });
 
     expect(jest.mocked(fake.manager.write).mock.calls.map((call) => call[3])).toEqual([
-      [0, 0xff],
-      [0, 0],
+      [0, 0, 0xff],
+      [0, 0, 0],
       [0, 0, 0xff, ...Array(10).fill(0)],
       [0, 0, 0, ...Array(10).fill(0)],
       [0, 0, 1, ...Array(10).fill(0)],
@@ -351,6 +351,130 @@ describe('ShiftclockBleController', () => {
     controller.addTuneListener((tunes) => replayedTunes.push(tunes));
     expect(replayedAlarms).toEqual([alarmSnapshots[1]]);
     expect(replayedTunes).toEqual([tuneSnapshots[1]]);
+  });
+
+  test('plays a Tune with a duration-aware acknowledgement timeout', async () => {
+    jest.useFakeTimers();
+    try {
+      const fake = createManager();
+      const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+      await controller.connect('clock-1');
+      jest.mocked(fake.manager.read)
+        .mockReset()
+        .mockResolvedValueOnce([0, 1, ...Array(24).fill(0)])
+        .mockResolvedValueOnce(tunePacket(0, 41_144, 'Push'))
+        .mockResolvedValueOnce([0, 0, ...Array(10).fill(0)]);
+      acknowledgeEveryWrite(fake);
+      await controller.reloadAlarmData();
+      jest.mocked(fake.manager.write).mockReset().mockResolvedValue(undefined);
+
+      const play = controller.playTune(0);
+      let settled = false;
+      void play.finally(() => { settled = true; });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(fake.manager.write).toHaveBeenCalledWith(
+        'clock-1',
+        '8984ff44-0000-4291-868b-2a44c36ed7e8',
+        '8984ff44-0004-4291-868b-2a44c36ed7e8',
+        [0, 1, 0],
+        3
+      );
+      jest.advanceTimersByTime(1_000);
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      await acknowledgeSettings(fake);
+      await expect(play).resolves.toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test.each([
+    [3, 'Write Tune: Queue Full'],
+    [7, 'Tune Audio Unavailable'],
+  ])('rejects Tune Play immediately for firmware error code %i', async (code, description) => {
+    jest.useFakeTimers();
+    try {
+      const fake = createManager();
+      const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+      await controller.connect('clock-1');
+      jest.mocked(fake.manager.read)
+        .mockReset()
+        .mockResolvedValueOnce([0, 1, ...Array(24).fill(0)])
+        .mockResolvedValueOnce(tunePacket(0, 41_144, 'Push'))
+        .mockResolvedValueOnce([0, 0, ...Array(10).fill(0)]);
+      acknowledgeEveryWrite(fake);
+      await controller.reloadAlarmData();
+      jest.mocked(fake.manager.write).mockReset().mockResolvedValue(undefined);
+
+      const play = controller.playTune(0);
+      const rejectedPlay = expect(play).rejects.toThrow(description);
+      await Promise.resolve();
+      await Promise.resolve();
+      await fake.notify({
+        peripheral: 'clock-1',
+        service: '8984ff44-0000-4291-868b-2a44c36ed7e8',
+        characteristic: '8984ff44-0003-4291-868b-2a44c36ed7e8',
+        value: messagePacket(1, code, description),
+      });
+      jest.advanceTimersByTime(10_000);
+
+      await rejectedPlay;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('sends Tune cancellation immediately while Play is awaiting acknowledgement', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    jest.mocked(fake.manager.read)
+      .mockReset()
+      .mockResolvedValueOnce([0, 1, ...Array(24).fill(0)])
+      .mockResolvedValueOnce(tunePacket(0, 41_144, 'Push'))
+      .mockResolvedValueOnce([0, 0, ...Array(10).fill(0)]);
+    acknowledgeEveryWrite(fake);
+    await controller.reloadAlarmData();
+    jest.mocked(fake.manager.write).mockReset().mockResolvedValue(undefined);
+
+    const play = controller.playTune(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    const cancel = controller.cancelTunePreview();
+    await Promise.resolve();
+
+    expect(jest.mocked(fake.manager.write).mock.calls.map((call) => call[3])).toEqual([
+      [0, 1, 0],
+      [0, 1, 0xff],
+    ]);
+    await expect(cancel).resolves.toBeUndefined();
+    await acknowledgeSettings(fake);
+    await expect(play).resolves.toBeUndefined();
+  });
+
+  test('suppresses a Tune Play cancelled before its BLE write is submitted', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'ios', async () => undefined);
+    await controller.connect('clock-1');
+    jest.mocked(fake.manager.read)
+      .mockReset()
+      .mockResolvedValueOnce([0, 1, ...Array(24).fill(0)])
+      .mockResolvedValueOnce(tunePacket(0, 41_144, 'Push'))
+      .mockResolvedValueOnce([0, 0, ...Array(10).fill(0)]);
+    acknowledgeEveryWrite(fake);
+    await controller.reloadAlarmData();
+    jest.mocked(fake.manager.write).mockReset().mockResolvedValue(undefined);
+
+    const play = controller.playTune(0);
+    const cancel = controller.cancelTunePreview();
+
+    await expect(cancel).resolves.toBeUndefined();
+    await expect(play).resolves.toBeUndefined();
+    expect(fake.manager.write).not.toHaveBeenCalled();
   });
 
   test('acknowledges an Alarm mutation, rereads Alarms, and publishes shifted IDs', async () => {

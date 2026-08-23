@@ -6,9 +6,11 @@ import {
   addAlarmListener,
   addConnectionStateListener,
   addTuneListener,
+  cancelTunePreview,
   commitAlarms,
   createAlarm,
   modifyAlarm,
+  playTune,
   reloadAlarmData,
   reloadAlarms,
   removeAlarm,
@@ -41,6 +43,8 @@ export default function AlarmsScreen() {
   const [testTuneId, setTestTuneId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [stoppingPreview, setStoppingPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -80,6 +84,7 @@ export default function AlarmsScreen() {
   const connected = connection.state === 'connected';
   const availableTunes = tunes ?? [];
   const ready = connected && alarms !== null && tunes !== null;
+  const busy = mutating || previewing;
 
   async function submitAlarm(alarm: Alarm) {
     setMutating(true);
@@ -144,6 +149,32 @@ export default function AlarmsScreen() {
     }
   }
 
+  async function playSelectedTune() {
+    if (!ready || testTuneId === null || loading || busy) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      await playTune(testTuneId);
+    } catch (cause) {
+      setError(messageFromError(cause));
+    } finally {
+      setPreviewing(false);
+      setStoppingPreview(false);
+    }
+  }
+
+  async function stopTunePreview() {
+    if (!previewing || stoppingPreview) return;
+    setStoppingPreview(true);
+    setError(null);
+    try {
+      await cancelTunePreview();
+    } catch (cause) {
+      setError(messageFromError(cause));
+      setStoppingPreview(false);
+    }
+  }
+
   return (
     <ScrollView
       style={{ backgroundColor: theme.background }}
@@ -171,13 +202,13 @@ export default function AlarmsScreen() {
               <View style={styles.actions}>
                 <ActionButton
                   accessibilityLabel="Commit alarms"
-                  disabled={loading || mutating}
+                  disabled={loading || busy}
                   label={mutating ? 'Committing…' : 'Commit'}
                   onPress={() => void commitPersistedAlarms()}
                 />
                 <ActionButton
                   accessibilityLabel="Reload alarms"
-                  disabled={loading || mutating}
+                  disabled={loading || busy}
                   label={loading ? 'Reloading…' : 'Reload'}
                   onPress={() => void reloadPersistedAlarms()}
                 />
@@ -194,8 +225,8 @@ export default function AlarmsScreen() {
                   <ThemedText type="small">{tune ? formatTuneLabel(tune) : `Tune ${alarm.tuneId}`}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">Volume {alarm.volume} · Ramp {alarm.rampDurationSeconds} s · Auto-disable {alarm.autoDisableSeconds} s</ThemedText>
                   <View style={styles.actions}>
-                    <ActionButton accessibilityLabel={`Edit alarm ${alarm.id}`} disabled={mutating} label="Edit" onPress={() => setEditing(alarm)} />
-                    <ActionButton accessibilityLabel={`Delete alarm ${alarm.id}`} disabled={mutating} label="Delete" onPress={() => confirmRemove(alarm)} />
+                    <ActionButton accessibilityLabel={`Edit alarm ${alarm.id}`} disabled={busy} label="Edit" onPress={() => setEditing(alarm)} />
+                    <ActionButton accessibilityLabel={`Delete alarm ${alarm.id}`} disabled={busy} label="Delete" onPress={() => confirmRemove(alarm)} />
                   </View>
                 </ThemedView>
               );
@@ -204,13 +235,18 @@ export default function AlarmsScreen() {
         ) : null}
 
         <ThemedView type="backgroundElement" style={styles.card}>
-          <AlarmForm disabled={!ready || mutating} initialAlarm={editing} onCancel={() => setEditing(null)} onSubmit={submitAlarm} tunes={availableTunes} />
+          <AlarmForm disabled={!ready || busy} initialAlarm={editing} onCancel={() => setEditing(null)} onSubmit={submitAlarm} tunes={availableTunes} />
         </ThemedView>
 
         <ThemedView type="backgroundElement" style={styles.card}>
           <ThemedText type="smallBold">Test a tune</ThemedText>
-          <TuneSelect disabled={!ready || mutating} label="Test tune" onChange={setTestTuneId} tunes={availableTunes} value={testTuneId} />
-          <ActionButton accessibilityLabel="Play selected tune" disabled label="Play tune (coming soon)" onPress={() => undefined} />
+          <TuneSelect disabled={!ready || busy} label="Test tune" onChange={setTestTuneId} tunes={availableTunes} value={testTuneId} />
+          <ActionButton
+            accessibilityLabel={previewing ? 'Stop tune preview' : 'Play selected tune'}
+            disabled={stoppingPreview || (!previewing && (!ready || testTuneId === null || loading || mutating))}
+            label={stoppingPreview ? 'Stopping…' : previewing ? 'Stop tune' : 'Play tune'}
+            onPress={() => void (previewing ? stopTunePreview() : playSelectedTune())}
+          />
         </ThemedView>
 
         {error ? <ThemedText type="small" style={styles.error}>{error}</ThemedText> : null}

@@ -150,7 +150,20 @@ export function encodeTuneSelection(id: number): number[] {
   if (!Number.isInteger(id) || (id !== tune.invalidId && (id < 0 || id >= tune.maximumCount))) {
     throw new Error('Invalid Tune ID');
   }
-  return [SHIFTCLOCK_BLE_PROTOCOL.header, id];
+  return [SHIFTCLOCK_BLE_PROTOCOL.header, tune.commands.read, id];
+}
+
+export function encodeTunePlay(id: number): number[] {
+  const tune = SHIFTCLOCK_BLE_PROTOCOL.tune;
+  if (!Number.isInteger(id) || id < 0 || id >= tune.maximumCount) {
+    throw new Error('Invalid Tune ID');
+  }
+  return [SHIFTCLOCK_BLE_PROTOCOL.header, tune.commands.play, id];
+}
+
+export function encodeTuneCancel(): number[] {
+  const tune = SHIFTCLOCK_BLE_PROTOCOL.tune;
+  return [SHIFTCLOCK_BLE_PROTOCOL.header, tune.commands.play, tune.invalidId];
 }
 
 export function decodeTuneRead(

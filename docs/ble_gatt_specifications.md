@@ -13,8 +13,11 @@ an attribute explicitly says otherwise.
 - The firmware is configured for one active BLE connection. A second central
   cannot connect until the current connection ends.
 - Alarm Add, Modify, Remove, Commit, and Reload writes plus Settings writes are
-  copied into one FIFO queue. Alarm and Tune Read selection are handled
-  directly in their characteristic callbacks.
+  copied into the Clock FIFO. Tune Play writes use a separate audio FIFO
+  consumed by the Alarm worker, which is the sole I2S writer. Tune Cancel
+  uses a reserved Stop slot so cancellation cannot be rejected by four pending
+  Play commands. Alarm and Tune Read selection are handled directly in their
+  characteristic callbacks.
 - Packet size and header validation plus enqueueing happen in the
   characteristic write callback. Queued Alarm commands and field ranges are
   validated by the worker before the Alarm collection is changed.
@@ -39,7 +42,7 @@ Only the Clock service UUID is included in advertising.
 | Alarm | `8984ff44-0001-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 13 write, 12 read | N/A |
 | Settings | `8984ff44-0002-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 3 write, 8 read | N/A |
 | Message | `8984ff44-0003-4291-868b-2a44c36ed7e8` | Notify | 43 | N/A |
-| Tune | `8984ff44-0004-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 2 write, 26 read | N/A |
+| Tune | `8984ff44-0004-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 3 write, 26 read | N/A |
 
 ### Alarm write packet
 
@@ -89,16 +92,32 @@ current Alarm count in the ID byte and all 10 packed Alarm bytes set to zero.
 Reading before any selection also returns this count response. Alarm IDs other
 than `0xFF` must be below the current Alarm count.
 
-### Tune selection packet
+### Tune write packet
 
-Tune selection writes are exactly 2 bytes:
+Tune writes are exactly 3 bytes:
 
 - Header: 1 byte. Must be `0`.
-- Tune ID: 1 byte. A value below the current Tune count selects that Tune for
-  the next read. `0xFF` selects the Tune count response.
+- Command: 1 byte.
+  - `0`: select a Tune ID for the next characteristic read.
+  - `1`: play or cancel Tune audio.
+- Tune ID: 1 byte.
+  - For Read, a value below the current Tune count selects that Tune and
+    `0xFF` selects the Tune count response.
+  - For Play, a value below the current Tune count plays one loop at 100% of
+    the Tune volume, scaled by the clock's Volume setting. `0xFF` cancels the
+    audio currently being written.
 
-Other Tune IDs are rejected. Selection is handled directly in the
-characteristic callback because the Tune catalogue is immutable.
+Other commands and Tune IDs are rejected. Read selection is handled directly
+and emits `INFO_OPERATION_SUCCEEDED`. Play uses the four-entry audio FIFO.
+Before the first I2S chunk and between later chunks, the Alarm worker stops the
+current audio whenever another audio command is queued. Cancel queues Stop in a
+fifth reserved slot; consecutive pending Stops coalesce, while a Stop arriving
+after a later Play remains queued after that Play. Earlier Play commands stay
+FIFO-ordered, observe the later command before writing another chunk, and each
+emit `INFO_OPERATION_SUCCEEDED` in request order. Cancel emits no separate
+operation-success notification. A later Play queued after Stop may start
+normally. Either Play or Cancel also interrupts an active Alarm because the
+Alarm worker owns all I2S playback.
 
 ### Tune read packet
 
@@ -161,8 +180,8 @@ two's-complement encoding; for example, timezone `-12` is encoded as `0xF4`.
   final byte is always a null terminator.
 
 The Message characteristic is the direct notification path and is not routed
-through the Clock queue. This allows a queue rejection to be reported without
-recursively enqueueing the error notification.
+through the Clock or audio queues. This allows a queue rejection to be reported
+without recursively enqueueing the error notification.
 
 Current error codes are:
 
@@ -172,7 +191,7 @@ Current error codes are:
 | `0x04` | Client disconnect request failed. |
 | `0x05` | Packet header or field value is invalid. |
 | `0x06` | Packet size is invalid. |
-| `0x07` | A requested persistence operation failed. |
+| `0x07` | A requested operation failed or Tune audio is unavailable. |
 
 Queue-creation, worker-creation, and other failures that occur before the
 Message characteristic is available are written to the serial log instead.

@@ -8,6 +8,8 @@ import {
   encodeAlarmMutation,
   encodeAlarmSelection,
   encodeSettings,
+  encodeTuneCancel,
+  encodeTunePlay,
   encodeTuneSelection,
 } from './ShiftclockBle.protocol';
 import type {
@@ -109,6 +111,11 @@ type OperationAcknowledgement = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
+type TunePreviewRequest = {
+  cancelled: boolean;
+  submitted: boolean;
+};
+
 function isTransientBleState(state: string): boolean {
   return state === 'unknown' || state === 'resetting' || state === 'turning_on';
 }
@@ -152,6 +159,7 @@ export class ShiftclockBleController {
   private connectionGeneration = 0;
   private writeQueue: Promise<void> = Promise.resolve();
   private operationAcknowledgement: OperationAcknowledgement | null = null;
+  private tunePreviewRequest: TunePreviewRequest | null = null;
 
   constructor(
     private readonly manager: BleManagerClient,
@@ -427,6 +435,67 @@ export class ShiftclockBleController {
     });
   }
 
+  async playTune(id: number): Promise<void> {
+    if (this.tunePreviewRequest !== null) {
+      throw new Error('A Tune preview is already active');
+    }
+    const packet = encodeTunePlay(id);
+    const request: TunePreviewRequest = { cancelled: false, submitted: false };
+    this.tunePreviewRequest = request;
+    try {
+      await this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
+        if (request.cancelled) return;
+        const tune = this.currentTunes?.find((candidate) => candidate.id === id);
+        if (tune === undefined) {
+          throw new Error('Tune metadata is unavailable');
+        }
+        const acknowledgementTimeoutMs =
+          Math.ceil(tune.loopDurationSeconds * 1_000) + OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS;
+        request.submitted = true;
+        await this.writeAcknowledged(
+          deviceId,
+          connectionGeneration,
+          SHIFTCLOCK_BLE_UUIDS.tuneCharacteristic,
+          packet,
+          SHIFTCLOCK_BLE_PROTOCOL.tune.writePacketSize,
+          'Tune play',
+          acknowledgementTimeoutMs
+        );
+      });
+    } finally {
+      if (this.tunePreviewRequest === request) {
+        this.tunePreviewRequest = null;
+      }
+    }
+  }
+
+  async cancelTunePreview(): Promise<void> {
+    const request = this.tunePreviewRequest;
+    if (request === null) return;
+    request.cancelled = true;
+    if (!request.submitted) return;
+
+    const deviceId = this.activeDeviceId;
+    const connectionGeneration = this.connectionGeneration;
+    if (
+      deviceId === null ||
+      this.currentConnection.state !== 'connected' ||
+      this.currentConnection.deviceId !== deviceId
+    ) {
+      throw new Error('No Shiftclock is connected');
+    }
+
+    this.assertActiveOperation(deviceId, connectionGeneration);
+    await this.manager.write(
+      deviceId,
+      SHIFTCLOCK_BLE_UUIDS.clockService,
+      SHIFTCLOCK_BLE_UUIDS.tuneCharacteristic,
+      encodeTuneCancel(),
+      SHIFTCLOCK_BLE_PROTOCOL.tune.writePacketSize
+    );
+    this.assertActiveOperation(deviceId, connectionGeneration);
+  }
+
   async createAlarm(alarm: Alarm): Promise<readonly AlarmRecord[]> {
     return this.mutateAlarm('add', 0, alarm);
   }
@@ -673,8 +742,13 @@ export class ShiftclockBleController {
       ) {
         this.resolveOperationAcknowledgement(event.peripheral);
       } else if (
-        message.type === SHIFTCLOCK_BLE_PROTOCOL.message.errorOperationFailed.type &&
-        message.code === SHIFTCLOCK_BLE_PROTOCOL.message.errorOperationFailed.code
+        (
+          message.type === SHIFTCLOCK_BLE_PROTOCOL.message.errorBleJobQueueFailed.type &&
+          message.code === SHIFTCLOCK_BLE_PROTOCOL.message.errorBleJobQueueFailed.code
+        ) || (
+          message.type === SHIFTCLOCK_BLE_PROTOCOL.message.errorOperationFailed.type &&
+          message.code === SHIFTCLOCK_BLE_PROTOCOL.message.errorOperationFailed.code
+        )
       ) {
         this.rejectOperationAcknowledgement(new Error(message.description));
       }
@@ -881,13 +955,15 @@ export class ShiftclockBleController {
     characteristicUuid: string,
     packet: number[],
     maxByteSize: number,
-    operationName: string
+    operationName: string,
+    acknowledgementTimeoutMs = OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS
   ): Promise<void> {
     this.assertActiveOperation(deviceId, connectionGeneration);
     const acknowledgement = this.waitForOperationAcknowledgement(
       deviceId,
       connectionGeneration,
-      operationName
+      operationName,
+      acknowledgementTimeoutMs
     );
     try {
       await Promise.all([
@@ -911,7 +987,8 @@ export class ShiftclockBleController {
   private waitForOperationAcknowledgement(
     deviceId: string,
     connectionGeneration: number,
-    operationName: string
+    operationName: string,
+    acknowledgementTimeoutMs: number
   ): Promise<void> {
     if (this.operationAcknowledgement !== null) {
       return Promise.reject(new Error('Another operation acknowledgement is pending'));
@@ -928,10 +1005,10 @@ export class ShiftclockBleController {
         this.operationAcknowledgement = null;
         reject(
           new Error(
-            `${operationName} timed out after ${OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS} ms`
+            `${operationName} timed out after ${acknowledgementTimeoutMs} ms`
           )
         );
-      }, OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS);
+      }, acknowledgementTimeoutMs);
 
       this.operationAcknowledgement = {
         deviceId,

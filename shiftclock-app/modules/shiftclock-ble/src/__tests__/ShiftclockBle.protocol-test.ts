@@ -9,6 +9,8 @@ import {
   encodeAlarmMutation,
   encodeAlarmSelection,
   encodeSettings,
+  encodeTuneCancel,
+  encodeTunePlay,
   encodeTuneSelection,
 } from '../ShiftclockBle.protocol';
 
@@ -112,8 +114,10 @@ describe('Shiftclock BLE protocol', () => {
     );
   });
 
-  test('encodes Tune selection and decodes count and metadata', () => {
-    expect(encodeTuneSelection(0xff)).toEqual([0, 0xff]);
+  test('encodes Tune read, play, and cancel commands and decodes metadata', () => {
+    expect(encodeTuneSelection(0xff)).toEqual([0, 0, 0xff]);
+    expect(encodeTunePlay(3)).toEqual([0, 1, 3]);
+    expect(encodeTuneCancel()).toEqual([0, 1, 0xff]);
     expect(decodeTuneRead([0, 1, ...Array(24).fill(0)], 'count')).toEqual({
       kind: 'count',
       count: 1,
@@ -125,6 +129,10 @@ describe('Shiftclock BLE protocol', () => {
       kind: 'tune',
       tune: { id: 3, name: 'Push', loopDurationSeconds: 1.28575 },
     });
+  });
+
+  test('rejects a Tune play ID outside the catalogue range', () => {
+    expect(() => encodeTunePlay(0xff)).toThrow('Invalid Tune ID');
   });
 
   test('rejects malformed Tune responses', () => {

@@ -19,6 +19,10 @@ AlarmWriteCallback alarmWriteCallback;
 TuneCallback tuneCallback;
 SettingsCallback settingsCallback;
 
+void acknowledgeTunePreview() {
+  emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Tune Write Succeeded");
+}
+
 void encodeAlarmReadResponse(
   uint8_t (&packet)[ALARM_READ_PACKET_SIZE],
   uint8_t idOrCount,
@@ -43,7 +47,7 @@ bool encodeTuneReadResponse(
 
   memset(packet, 0, sizeof(packet));
   packet[HEADER_OFFSET] = PROTOCOL_HEADER;
-  packet[TUNE_ID_OFFSET] = idOrCount;
+  packet[TUNE_READ_ID_OFFSET] = idOrCount;
 
   const uint32_t wireDataLength = static_cast<uint32_t>(dataLength);
   for (size_t index = 0; index < sizeof(wireDataLength); ++index) {
@@ -201,14 +205,35 @@ void TuneCallback::onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo&
     return;
   }
 
-  const uint8_t tuneId = readByte(data, dataLength, TUNE_ID_OFFSET);
+  const uint8_t command = readByte(data, dataLength, TUNE_WRITE_COMMAND_OFFSET);
+  const uint8_t tuneId = readByte(data, dataLength, TUNE_WRITE_ID_OFFSET);
+
   if (tuneId != INVALID_TUNE_ID && tuneId >= getTuneCount()) {
     emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Tune id");
     return;
   }
 
-  selectedTuneId = tuneId;
-  emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Tune Selection Succeeded");
+  if (command == TUNE_READ_COMMAND) {
+    selectedTuneId = tuneId;
+    emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Tune Write Succeeded");
+    return;
+  }
+
+  if (command != TUNE_PLAY_COMMAND) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Invalid Command");
+    return;
+  }
+
+  if (tuneId == INVALID_TUNE_ID) {
+    if (!cancelAudio()) {
+      emitMessage(ERROR_TAG, ERROR_OPERATION_FAILED, "Tune Audio Unavailable");
+    }
+    return;
+  }
+
+  if (!queueTunePreview(tuneId, acknowledgeTunePreview)) {
+    emitMessage(ERROR_TAG, ERROR_OPERATION_FAILED, "Tune Audio Unavailable");
+  }
 }
 
 void TuneCallback::onRead(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) {

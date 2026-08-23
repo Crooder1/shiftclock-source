@@ -44,9 +44,13 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
   tune: {
     invalidId: 0xff,
     maximumCount: 32,
-    writePacketSize: 2,
+    writePacketSize: 3,
     readPacketSize: 26,
     bytesPerSecond: 32_000,
+    commands: {
+      read: 0,
+      play: 1,
+    },
     offsets: {
       header: 0,
       id: 1,
@@ -96,6 +100,7 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
       description: 3,
     },
     infoOperationSucceeded: { type: 0, code: 0 },
+    errorBleJobQueueFailed: { type: 1, code: 3 },
     errorOperationFailed: { type: 1, code: 7 },
   },
 } as const;

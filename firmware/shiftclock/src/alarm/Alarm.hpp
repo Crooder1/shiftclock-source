@@ -28,6 +28,8 @@ constexpr size_t AUDIO_CHUNK_SIZE = 512;
 
 constexpr size_t ALARM_STACK_DEPTH = 4096;
 
+using AudioCompletionCallback = void (*)();
+
 class Alarm {
 
 public:
@@ -73,9 +75,8 @@ bool removeAlarm(uint8_t id);
 bool initializeAlarms();
 bool initializeI2S();
 
-// Returns true for finished, false for cancelled
-bool writeAudio(const uint8_t* audio, size_t audioLength, uint8_t initialVolume, uint8_t finalVolume);
-void cancelAudio();
+bool queueTunePreview(uint8_t tuneId, AudioCompletionCallback onComplete);
+bool cancelAudio();
 
 bool loadAlarms();
 bool commitAlarms();

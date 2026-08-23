@@ -41,7 +41,7 @@ void loop() {
   }
 
   if (buttonStatus) {
-    cancelAudio();
+    (void)cancelAudio();
     buttonStatus = false;
   }
 

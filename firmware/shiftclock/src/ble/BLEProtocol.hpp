@@ -31,11 +31,15 @@ constexpr size_t ALARM_READ_ID_OFFSET = 1;
 constexpr size_t ALARM_READ_PAYLOAD_OFFSET = 2;
 constexpr size_t ALARM_READ_PACKET_SIZE = PACKED_ALARM_SIZE + 2;
 
-constexpr size_t TUNE_ID_OFFSET = 1;
+// tune read
+constexpr size_t TUNE_READ_ID_OFFSET = 1;
 constexpr size_t TUNE_DATA_LENGTH_OFFSET = 2;
 constexpr size_t TUNE_NAME_OFFSET = 6;
-constexpr size_t TUNE_WRITE_PACKET_SIZE = 2;
 constexpr size_t TUNE_READ_PACKET_SIZE = TUNE_NAME_OFFSET + MAX_NAME_LENGTH;
+
+constexpr size_t TUNE_WRITE_COMMAND_OFFSET = 1;
+constexpr size_t TUNE_WRITE_ID_OFFSET = 2;
+constexpr size_t TUNE_WRITE_PACKET_SIZE = 3;
 
 constexpr size_t SETTINGS_ID_OFFSET = 1;
 constexpr size_t SETTINGS_VALUE_OFFSET = 2;
@@ -61,6 +65,10 @@ constexpr uint8_t ALARM_RELOAD_COMMAND = 0x5;
 constexpr int8_t SETTINGS_COMMAND_ID = -1;
 constexpr int8_t SETTINGS_COMMIT_VALUE = -1;
 constexpr int8_t SETTINGS_RELOAD_VALUE = -2;
+
+// --- Tune Commands ---
+constexpr uint8_t TUNE_READ_COMMAND = 0x0;
+constexpr uint8_t TUNE_PLAY_COMMAND = 0x1;
 
 // --- Messages ---
 

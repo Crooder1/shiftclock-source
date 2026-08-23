@@ -4,9 +4,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import AlarmsScreen from '../app/alarms';
 import {
+  cancelTunePreview,
   commitAlarms,
   createAlarm,
   modifyAlarm,
+  playTune,
   reloadAlarmData,
   reloadAlarms,
   removeAlarm,
@@ -41,6 +43,8 @@ jest.mock('../../modules/shiftclock-ble', () => ({
   createAlarm: jest.fn().mockResolvedValue([]),
   modifyAlarm: jest.fn().mockResolvedValue([]),
   removeAlarm: jest.fn().mockResolvedValue([]),
+  playTune: jest.fn().mockResolvedValue(undefined),
+  cancelTunePreview: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/hooks/use-theme', () => ({
@@ -98,6 +102,8 @@ describe('AlarmsScreen', () => {
     jest.mocked(createAlarm).mockResolvedValue([]);
     jest.mocked(modifyAlarm).mockResolvedValue([]);
     jest.mocked(removeAlarm).mockResolvedValue([]);
+    jest.mocked(playTune).mockResolvedValue(undefined);
+    jest.mocked(cancelTunePreview).mockResolvedValue(undefined);
   });
 
   test('shows disconnected guidance and keeps Tune playback disabled', async () => {
@@ -115,6 +121,27 @@ describe('AlarmsScreen', () => {
     expect(screen.getByText('07:00:01')).toBeTruthy();
     expect(screen.getByText('Mon-Fri')).toBeTruthy();
     expect(screen.getAllByText('Push - 1.29 s').length).toBeGreaterThan(0);
+  });
+
+  test('plays the selected Tune and offers Stop until preview completion', async () => {
+    let finishPreview: (() => void) | undefined;
+    jest.mocked(playTune).mockImplementation(
+      () => new Promise<void>((resolve) => { finishPreview = resolve; })
+    );
+    await renderAlarms();
+    await connectAndPublish();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Play selected tune' }));
+    await waitFor(() => expect(playTune).toHaveBeenCalledWith(0));
+    expect(screen.getByRole('button', { name: 'Stop tune preview' })).toBeEnabled();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Stop tune preview' }));
+    await waitFor(() => expect(cancelTunePreview).toHaveBeenCalledTimes(1));
+
+    await act(async () => { finishPreview?.(); });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Play selected tune' })).toBeEnabled()
+    );
   });
 
   test('commits and reloads Alarm persistence through explicit controls', async () => {
