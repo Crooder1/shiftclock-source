@@ -1,0 +1,4 @@
+[submodule "hardware"]
+	path = hardware
+	url = https://github.com/Crooder1/shiftclock.git
+	branch = V5
