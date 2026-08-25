@@ -59,7 +59,7 @@ function createManager() {
     disconnect: jest.fn().mockResolvedValue(undefined),
     retrieveServices: jest.fn().mockResolvedValue(readyPeripheral()),
     requestMTU: jest.fn().mockResolvedValue(46),
-    read: jest.fn().mockResolvedValue([0, 0xfb, 8, 1, 2, 20, 1, 0]),
+    read: jest.fn().mockResolvedValue([0, 0xfb, 12, 2, 22, 6, 1, 2, 20, 1, 0]),
     startNotification: jest.fn().mockResolvedValue(undefined),
     stopNotification: jest.fn().mockResolvedValue(undefined),
     write: jest.fn().mockResolvedValue(undefined),
@@ -215,7 +215,10 @@ describe('ShiftclockBleController', () => {
       null,
       {
         timezone: -5,
-        brightness: 8,
+        dayBrightness: 12,
+        nightBrightness: 2,
+        dayNightCutoff: 22,
+        nightDayCutoff: 6,
         seconds: 1,
         movingDp: 2,
         volume: 20,
@@ -925,7 +928,7 @@ describe('ShiftclockBleController', () => {
       code: 0,
       description: 'Settings Write Succeeded',
     });
-    expect(settings.at(-1)).toMatchObject({ brightness: 12 });
+    expect(settings.at(-1)).toMatchObject({ dayBrightness: 12 });
   });
 
   test('writes a negative Setting value as a two-complement byte', async () => {
@@ -1030,7 +1033,7 @@ describe('ShiftclockBleController', () => {
     await controller.connect('clock-1');
     jest.mocked(fake.manager.read)
       .mockClear()
-      .mockResolvedValue([0, 4, 5, 0, 1, 30, 0, 1]);
+      .mockResolvedValue([0, 4, 5, 3, 21, 7, 0, 1, 30, 0, 1]);
 
     const reload = controller.reloadSettings();
     await Promise.resolve();
@@ -1039,7 +1042,10 @@ describe('ShiftclockBleController', () => {
 
     await expect(reload).resolves.toEqual({
       timezone: 4,
-      brightness: 5,
+      dayBrightness: 5,
+      nightBrightness: 3,
+      dayNightCutoff: 21,
+      nightDayCutoff: 7,
       seconds: 0,
       movingDp: 1,
       volume: 30,
@@ -1074,7 +1080,7 @@ describe('ShiftclockBleController', () => {
       volume: 4,
       autoDisableSeconds: 5,
     });
-    const settingsWrite = controller.writeSettings({ id: 5, value: 1 });
+    const settingsWrite = controller.writeSettings({ id: 8, value: 1 });
     await Promise.resolve();
 
     expect(fake.manager.write).toHaveBeenCalledTimes(1);
@@ -1098,7 +1104,7 @@ describe('ShiftclockBleController', () => {
       'clock-1',
       '8984ff44-0000-4291-868b-2a44c36ed7e8',
       '8984ff44-0002-4291-868b-2a44c36ed7e8',
-      [0, 5, 1],
+      [0, 8, 1],
       3
     );
   });

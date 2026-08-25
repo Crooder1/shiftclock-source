@@ -25,7 +25,10 @@ type ClockSettingsCardProps = {
 
 const settingKeys: (keyof ClockSettingsSnapshot)[] = [
   'timezone',
-  'brightness',
+  'dayBrightness',
+  'nightBrightness',
+  'dayNightCutoff',
+  'nightDayCutoff',
   'seconds',
   'movingDp',
   'volume',
@@ -37,7 +40,34 @@ const ids = SHIFTCLOCK_BLE_PROTOCOL.settings.ids;
 
 const sliders = [
   { key: 'timezone', label: 'Timezone', id: ids.timezone, minimum: -12, maximum: 11 },
-  { key: 'brightness', label: 'Brightness', id: ids.brightness, minimum: 0, maximum: 15 },
+  {
+    key: 'dayBrightness',
+    label: 'Day brightness',
+    id: ids.dayBrightness,
+    minimum: 0,
+    maximum: 15,
+  },
+  {
+    key: 'nightBrightness',
+    label: 'Night brightness',
+    id: ids.nightBrightness,
+    minimum: 0,
+    maximum: 15,
+  },
+  {
+    key: 'dayNightCutoff',
+    label: 'Day-to-night cutoff',
+    id: ids.dayNightCutoff,
+    minimum: 0,
+    maximum: 23,
+  },
+  {
+    key: 'nightDayCutoff',
+    label: 'Night-to-day cutoff',
+    id: ids.nightDayCutoff,
+    minimum: 0,
+    maximum: 23,
+  },
   {
     key: 'movingDp',
     label: 'Moving decimal point',
@@ -56,7 +86,10 @@ const toggles = [
 
 function settingKey(id: number): keyof ClockSettingsSnapshot {
   if (id === ids.timezone) return 'timezone';
-  if (id === ids.brightness) return 'brightness';
+  if (id === ids.dayBrightness) return 'dayBrightness';
+  if (id === ids.nightBrightness) return 'nightBrightness';
+  if (id === ids.dayNightCutoff) return 'dayNightCutoff';
+  if (id === ids.nightDayCutoff) return 'nightDayCutoff';
   if (id === ids.seconds) return 'seconds';
   if (id === ids.movingDp) return 'movingDp';
   if (id === ids.volume) return 'volume';

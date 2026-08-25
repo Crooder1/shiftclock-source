@@ -49,7 +49,10 @@ export type ClockSettings = {
 
 export type ClockSettingsSnapshot = {
   timezone: number;
-  brightness: number;
+  dayBrightness: number;
+  nightBrightness: number;
+  dayNightCutoff: number;
+  nightDayCutoff: number;
   seconds: number;
   movingDp: number;
   volume: number;

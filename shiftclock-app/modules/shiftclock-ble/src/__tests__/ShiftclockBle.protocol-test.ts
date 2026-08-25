@@ -14,7 +14,7 @@ import {
   encodeTuneSelection,
 } from '../ShiftclockBle.protocol';
 
-const SETTINGS_PACKET = [0, 0xfb, 8, 1, 2, 20, 1, 0] as const;
+const SETTINGS_PACKET = [0, 0xfb, 12, 2, 22, 6, 1, 2, 20, 1, 0] as const;
 
 describe('Shiftclock BLE protocol', () => {
   test('encodes the Alarm fields at their exact little-endian offsets', () => {
@@ -152,7 +152,7 @@ describe('Shiftclock BLE protocol', () => {
 
   test('encodes signed Settings fields as two-complement bytes', () => {
     expect(encodeSettings({ id: -1, value: -2 })).toEqual([0x00, 0xff, 0xfe]);
-    expect(encodeSettings({ id: 6, value: 100 })).toEqual([0x00, 0x06, 0x64]);
+    expect(encodeSettings({ id: 9, value: 100 })).toEqual([0x00, 0x09, 0x64]);
   });
 
   test('rejects values outside the signed Settings byte range', () => {
@@ -164,7 +164,10 @@ describe('Shiftclock BLE protocol', () => {
   test('decodes the exact Settings read packet in firmware ID order', () => {
     expect(decodeSettings(SETTINGS_PACKET)).toEqual({
       timezone: -5,
-      brightness: 8,
+      dayBrightness: 12,
+      nightBrightness: 2,
+      dayNightCutoff: 22,
+      nightDayCutoff: 6,
       seconds: 1,
       movingDp: 2,
       volume: 20,
@@ -174,16 +177,19 @@ describe('Shiftclock BLE protocol', () => {
   });
 
   test.each([
-    ['size', SETTINGS_PACKET.slice(0, 7), 'size'],
+    ['size', SETTINGS_PACKET.slice(0, 10), 'size'],
     ['header', [1, ...SETTINGS_PACKET.slice(1)], 'header'],
-    ['timezone low', [0, 0xf3, 8, 1, 2, 20, 1, 0], 'Timezone'],
-    ['timezone high', [0, 12, 8, 1, 2, 20, 1, 0], 'Timezone'],
-    ['brightness', [0, 0xfb, 16, 1, 2, 20, 1, 0], 'Brightness'],
-    ['seconds', [0, 0xfb, 8, 2, 2, 20, 1, 0], 'Seconds'],
-    ['moving DP', [0, 0xfb, 8, 1, 3, 20, 1, 0], 'Moving DP'],
-    ['volume', [0, 0xfb, 8, 1, 2, 101, 1, 0], 'Volume'],
-    ['clock form', [0, 0xfb, 8, 1, 2, 20, 2, 0], 'Clock form'],
-    ['meri indicator', [0, 0xfb, 8, 1, 2, 20, 1, 2], 'Meri indicator'],
+    ['timezone low', [0, 0xf3, 12, 2, 22, 6, 1, 2, 20, 1, 0], 'Timezone'],
+    ['timezone high', [0, 12, 12, 2, 22, 6, 1, 2, 20, 1, 0], 'Timezone'],
+    ['day brightness', [0, 0xfb, 16, 2, 22, 6, 1, 2, 20, 1, 0], 'Day brightness'],
+    ['night brightness', [0, 0xfb, 12, 16, 22, 6, 1, 2, 20, 1, 0], 'Night brightness'],
+    ['day-night cutoff', [0, 0xfb, 12, 2, 24, 6, 1, 2, 20, 1, 0], 'Day-night cutoff'],
+    ['night-day cutoff', [0, 0xfb, 12, 2, 22, 24, 1, 2, 20, 1, 0], 'Night-day cutoff'],
+    ['seconds', [0, 0xfb, 12, 2, 22, 6, 2, 2, 20, 1, 0], 'Seconds'],
+    ['moving DP', [0, 0xfb, 12, 2, 22, 6, 1, 3, 20, 1, 0], 'Moving DP'],
+    ['volume', [0, 0xfb, 12, 2, 22, 6, 1, 2, 101, 1, 0], 'Volume'],
+    ['clock form', [0, 0xfb, 12, 2, 22, 6, 1, 2, 20, 2, 0], 'Clock form'],
+    ['meri indicator', [0, 0xfb, 12, 2, 22, 6, 1, 2, 20, 1, 2], 'Meri indicator'],
   ])('rejects an invalid Settings %s', (_label, packet, message) => {
     expect(() => decodeSettings(packet)).toThrow(message);
   });

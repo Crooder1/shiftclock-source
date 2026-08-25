@@ -53,16 +53,16 @@ void initTime() {
   Serial.println();
   Serial.printf("Current Unix Time: %llu\n", (uint64_t)now);
 
-  setTimezoneOffset(getSetting(TIMEZONE_SETTING));
+  setTimezoneOffset();
 
   time_configured = true;
 }
 
-void setTimezoneOffset(int8_t utcOffsetHours) {
+void setTimezoneOffset() {
   char tz[16];
 
   // POSIX TZ signs are reversed
-  snprintf(tz, sizeof(tz), "UTC%+d", -utcOffsetHours);
+  snprintf(tz, sizeof(tz), "UTC%+d", -getSetting(TIMEZONE_SETTING));
 
   setenv("TZ", tz, 1);
   tzset();

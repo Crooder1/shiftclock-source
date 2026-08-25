@@ -24,7 +24,7 @@ void setup() {
 }
 
 void loop() {
- 
+
   // In loop because it crashes otherwise
   // Something about watchdog and not blocking setup()
   if (!wifi_initialized) {

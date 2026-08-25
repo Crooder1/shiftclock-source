@@ -27,12 +27,15 @@ jest.mock('../../modules/shiftclock-ble', () => ({
     settings: {
       ids: {
         timezone: 0,
-        brightness: 1,
-        seconds: 2,
-        movingDp: 3,
-        volume: 4,
-        clockForm: 5,
-        meriIndicator: 6,
+        dayBrightness: 1,
+        nightBrightness: 2,
+        dayNightCutoff: 3,
+        nightDayCutoff: 4,
+        seconds: 5,
+        movingDp: 6,
+        volume: 7,
+        clockForm: 8,
+        meriIndicator: 9,
       },
     },
   },
@@ -44,7 +47,10 @@ jest.mock('../../modules/shiftclock-ble', () => ({
   commitSettings: jest.fn().mockResolvedValue(undefined),
   reloadSettings: jest.fn().mockResolvedValue({
     timezone: 4,
-    brightness: 5,
+    dayBrightness: 5,
+    nightBrightness: 3,
+    dayNightCutoff: 21,
+    nightDayCutoff: 7,
     seconds: 0,
     movingDp: 1,
     volume: 30,
@@ -103,7 +109,10 @@ describe('ClockScreen', () => {
     jest.mocked(commitSettings).mockResolvedValue(undefined);
     jest.mocked(reloadSettings).mockResolvedValue({
       timezone: 4,
-      brightness: 5,
+      dayBrightness: 5,
+      nightBrightness: 3,
+      dayNightCutoff: 21,
+      nightDayCutoff: 7,
       seconds: 0,
       movingDp: 1,
       volume: 30,
@@ -252,7 +261,10 @@ describe('ClockScreen', () => {
 
     expect(screen.getByTestId('clock-settings-section')).toHaveStyle({ opacity: 1 });
     expect(screen.getByText('Timezone: -5')).toBeTruthy();
-    expect(screen.getByText('Brightness: 8')).toBeTruthy();
+    expect(screen.getByText('Day brightness: 12')).toBeTruthy();
+    expect(screen.getByText('Night brightness: 2')).toBeTruthy();
+    expect(screen.getByText('Day-to-night cutoff: 22')).toBeTruthy();
+    expect(screen.getByText('Night-to-day cutoff: 6')).toBeTruthy();
     expect(screen.getByText('Moving decimal point: 2')).toBeTruthy();
     expect(screen.getByText('Volume: 20')).toBeTruthy();
     expect(screen.getByRole('switch', { name: 'Seconds' })).toBeOnTheScreen();
@@ -266,7 +278,7 @@ describe('ClockScreen', () => {
     });
 
     fireEvent(screen.getByRole('switch', { name: 'Seconds' }), 'valueChange', false);
-    await waitFor(() => expect(writeSettings).toHaveBeenCalledWith({ id: 2, value: 0 }));
+    await waitFor(() => expect(writeSettings).toHaveBeenCalledWith({ id: 5, value: 0 }));
 
     await fireEvent.press(screen.getByRole('button', { name: 'Commit clock settings' }));
     await waitFor(() => expect(commitSettings).toHaveBeenCalledTimes(1));
@@ -282,13 +294,13 @@ describe('ClockScreen', () => {
     expect(screen.queryByRole('button', { name: 'Send alarm packet' })).toBeNull();
   });
 
-  test('samples Brightness and flushes its final release value', async () => {
+  test('samples Day brightness and flushes its final release value', async () => {
     await renderClock();
     await act(async () => {
       mockSettingsListener?.(SETTINGS);
       mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
     });
-    const brightness = screen.getByRole('adjustable', { name: 'Brightness' });
+    const brightness = screen.getByRole('adjustable', { name: 'Day brightness' });
 
     await act(async () => {
       brightness.props.onValueChange(10);
@@ -301,6 +313,39 @@ describe('ClockScreen', () => {
     await waitFor(() =>
       expect(writeSettings).toHaveBeenLastCalledWith({ id: 1, value: 15 })
     );
+  });
+
+  test('maps the remaining scheduled brightness sliders to their firmware IDs', async () => {
+    await renderClock();
+    await act(async () => {
+      mockSettingsListener?.(SETTINGS);
+      mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
+    });
+
+    const nightBrightness = screen.getByRole('adjustable', { name: 'Night brightness' });
+    const dayNightCutoff = screen.getByRole('adjustable', { name: 'Day-to-night cutoff' });
+    const nightDayCutoff = screen.getByRole('adjustable', { name: 'Night-to-day cutoff' });
+
+    expect(nightBrightness).toHaveProp('minimumValue', 0);
+    expect(nightBrightness).toHaveProp('maximumValue', 15);
+    expect(dayNightCutoff).toHaveProp('minimumValue', 0);
+    expect(dayNightCutoff).toHaveProp('maximumValue', 23);
+    expect(nightDayCutoff).toHaveProp('minimumValue', 0);
+    expect(nightDayCutoff).toHaveProp('maximumValue', 23);
+
+    await act(async () => {
+      nightBrightness.props.onSlidingComplete(4);
+      dayNightCutoff.props.onSlidingComplete(20);
+      nightDayCutoff.props.onSlidingComplete(8);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(writeSettings).toHaveBeenCalledWith({ id: 2, value: 4 });
+      expect(writeSettings).toHaveBeenCalledWith({ id: 3, value: 20 });
+      expect(writeSettings).toHaveBeenCalledWith({ id: 4, value: 8 });
+    });
   });
 
   test('restores the confirmed toggle when its write fails', async () => {
@@ -361,7 +406,10 @@ describe('ClockScreen', () => {
 
 const SETTINGS: ClockSettingsSnapshot = {
   timezone: -5,
-  brightness: 8,
+  dayBrightness: 12,
+  nightBrightness: 2,
+  dayNightCutoff: 22,
+  nightDayCutoff: 6,
   seconds: 1,
   movingDp: 2,
   volume: 20,

@@ -72,6 +72,8 @@ bool addAlarm(const Alarm& alarm);
 bool modifyAlarm(const Alarm& alarm, uint8_t id);
 bool removeAlarm(uint8_t id);
 
+bool isAlarmActive();
+
 bool initializeAlarms();
 bool initializeI2S();
 

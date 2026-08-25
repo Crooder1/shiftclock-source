@@ -23,6 +23,8 @@ bool i2SInitialized = false;
 std::vector<Alarm> alarms;
 std::mutex alarmsMutex;
 
+bool hasActiveAlarm = false;
+
 TaskHandle_t alarmTask = nullptr;
 
 constexpr size_t AUDIO_COMMAND_QUEUE_SIZE = 4;
@@ -195,6 +197,10 @@ bool removeAlarm(uint8_t id) {
   return true;
 }
 
+bool isAlarmActive() {
+  return hasActiveAlarm;
+}
+
 void alarmWorker(void* parameter) {
 
   time_t now = time(nullptr);
@@ -211,6 +217,7 @@ void alarmWorker(void* parameter) {
     if (takeAudioCommand(audioCommand)) {
       if (activeAlarm.has_value()) {
         Serial.println("Alarm Reset");
+        hasActiveAlarm = false;
         activeAlarm.reset();
         alarmActiveEpochSeconds = 0;
       }
@@ -252,6 +259,7 @@ void alarmWorker(void* parameter) {
 
         if (lastDaySeconds <= alarm.alarm_seconds && alarm.alarm_seconds <= daySeconds) {
           Serial.println("Alarm Active");
+          hasActiveAlarm = true;
           activeAlarm = alarm;
           alarmActiveEpochSeconds = epochSeconds;
         }
@@ -265,6 +273,7 @@ void alarmWorker(void* parameter) {
 
       if (activeAlarm->auto_disable_seconds > 0 && elapsedEpochSeconds > activeAlarm->auto_disable_seconds) {
         Serial.println("Alarm Timed Out");
+        hasActiveAlarm = false;
         activeAlarm.reset();
         alarmActiveEpochSeconds = 0;
       } else if (i2SInitialized) {
@@ -290,6 +299,7 @@ void alarmWorker(void* parameter) {
 
           if (cancelled) {
             Serial.println("Alarm Reset");
+            hasActiveAlarm = false;
             activeAlarm.reset();
           }
         }

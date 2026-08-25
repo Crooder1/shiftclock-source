@@ -44,7 +44,7 @@ constexpr size_t TUNE_WRITE_PACKET_SIZE = 3;
 constexpr size_t SETTINGS_ID_OFFSET = 1;
 constexpr size_t SETTINGS_VALUE_OFFSET = 2;
 constexpr size_t SETTINGS_WRITE_PACKET_SIZE = 3;
-constexpr size_t SETTINGS_READ_PACKET_SIZE = 8; 
+constexpr size_t SETTINGS_READ_PACKET_SIZE = 11; 
 
 constexpr size_t MESSAGE_TYPE_OFFSET = 1;
 constexpr size_t MESSAGE_CODE_OFFSET = 2;

@@ -8,13 +8,16 @@
 Preferences settings_preferences;
 
 SettingsEntry settings_array[] = {
-  {TIMEZONE_SETTING,      "Timezone",      "tz",  -5, -12, 11, setTimezoneOffset, NULL},
-  {BRIGHTNESS_SETTING,    "Brightness",    "bri", 8,  0, 15,   onBrightnessSet, NULL},
-  {SECONDS_SETTING,       "Seconds",       "sec", 0,  0, 1,    NULL, NULL},
-  {MOVINGDP_SETTING,      "MovingDP",      "dp",  0,  0, 2,    NULL, NULL},
-  {VOLUME_SETTING,        "Volume",        "vol", 20, 0, 100,  NULL, NULL},
-  {CLOCKFORM_SETTING,     "ClockForm",     "24h", 0,  0, 1,    NULL, NULL},
-  {MERIINDICATOR_SETTING, "MeriIndicator", "mer", 1,  0, 1,    NULL, NULL}
+  {TIMEZONE_SETTING,         "Timezone",        "tz",   -5, -12, 11,  setTimezoneOffset, NULL},
+  {BRIGHTNESS_DAY_SETTING,   "DayBrightness",   "dbri", 12, 0,   15,  brightnessCallback,  NULL},
+  {BRIGHTNESS_NIGHT_SETTING, "NightBrightness", "nbri", 2,  0,   15,  brightnessCallback,  NULL},
+  {DAY_NIGHT_CUTOFF_SETTING, "DayNightCutoff",  "dnc",  22, 0,   23,  brightnessCallback,  NULL},
+  {NIGHT_DAY_CUTOFF_SETTING, "NightDayCutoff",  "ndc",  6,  0,   23,  brightnessCallback,  NULL},
+  {SECONDS_SETTING,          "Seconds",         "sec",  0,  0,   1,   NULL, NULL},
+  {MOVINGDP_SETTING,         "MovingDP",        "dp",   0,  0,   2,   NULL, NULL},
+  {VOLUME_SETTING,           "Volume",          "vol",  20, 0,   100, NULL, NULL},
+  {CLOCKFORM_SETTING,        "ClockForm",       "24h",  0,  0,   1,   NULL, NULL},
+  {MERIINDICATOR_SETTING,    "MeriIndicator",   "mer",  1,  0,   1,   NULL, NULL}
 };
 
 void setSetting(uint8_t id, int8_t val) {
@@ -31,14 +34,14 @@ void setSetting(uint8_t id, int8_t val) {
   // Need this explicit line to not modify the copy
   settings_array[id].value = val;
 
-  if (entry.onSet != NULL) entry.onSet(val);
+  if (entry.onSet != NULL) entry.onSet();
 }
 
 int8_t getSetting(uint8_t id) {
 
   const SettingsEntry& entry = settings_array[id];
 
-  if (entry.onGet != NULL) entry.onGet(entry.value);
+  if (entry.onGet != NULL) entry.onGet();
 
   return entry.value;
 }

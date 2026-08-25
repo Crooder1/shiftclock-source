@@ -83,12 +83,12 @@ void initializeDisplay();
 void deinitializeDisplay();
 
 void displayTime();
-void displayDigit(uint8_t, uint8_t, bool);
 void displaySymbols(uint64_t);
-void displayNumber(uint32_t);
 
-void onBrightnessSet(int8_t);
+void brightnessCallback();
+void updateBrightness(int32_t hour);
 
 // helpers
 uint64_t numberToSymbol(uint32_t, uint8_t);
+uint64_t alarmActiveSymbol(uint64_t millis);
 uint64_t dpModeToSymbol(uint8_t, uint64_t);

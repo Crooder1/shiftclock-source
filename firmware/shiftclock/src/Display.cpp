@@ -1,5 +1,6 @@
 #include "Display.hpp"
 
+#include "alarm/Alarm.hpp"
 #include "Settings.hpp"
 
 #include <Arduino.h>
@@ -17,6 +18,7 @@ MD_MAX72XX lc = MD_MAX72XX(
   1
 );
 
+int8_t appliedBrightness = -1;
 bool displayInitialized = false;
 
 void initializeDisplay() {
@@ -28,23 +30,19 @@ void initializeDisplay() {
   lc.clear();
 
   displayInitialized = true;
+  appliedBrightness = -1;
 }
 
 void deinitializeDisplay() {
 
-  if (!displayInitialized) return
+  if (!displayInitialized) return;
 
   lc.clear();
 
   displayInitialized = false;
+  appliedBrightness = -1;
 }
 
-void displayDigit(uint8_t index, uint8_t digit, bool dp) {
-  if (index > 7 || digit > 15) return;
-  lc.setColumn(0, index, digit_symbols[digit] | (dp ? DP_S : 0));
-}
-
-// TODO - option for hour formatting and AM/PM
 void displayTime() {
 
   int8_t dp_mode = getSetting(MOVINGDP_SETTING);
@@ -61,6 +59,8 @@ void displayTime() {
 
   struct tm local;
   localtime_r(&now, &local);
+
+  updateBrightness(local.tm_hour);
 
   // This is needed before the 12 hours formatting
   uint32_t meridiem_symbol = (local.tm_hour >= 12) ? PM_SYMBOL : AM_SYMBOL;
@@ -85,7 +85,11 @@ void displayTime() {
     symbol = (symbol + meridiem_symbol);
   }
 
-  symbol += dpModeToSymbol(dp_mode, millisSinceEpoch);
+  if (isAlarmActive()) {
+    symbol |= alarmActiveSymbol(millisSinceEpoch);
+  } else {
+    symbol |= dpModeToSymbol(dp_mode, millisSinceEpoch);
+  }
 
   displaySymbols(symbol);
 }
@@ -106,21 +110,39 @@ void displaySymbols(uint64_t symbols) {
   interrupts();
 }
 
-// helper: display up to 8 digits
-void displayNumber(uint32_t num) {
-  for (int i = 7; i >= 0; i--) {
-    int digit = num % 10;
-    lc.setColumn(0, i, number_symbols[digit]);
-    num /= 10;
-  }
-}
-
-void onBrightnessSet(int8_t brightness) {
+void brightnessCallback() {
 
   if (!displayInitialized) return;
-  if (brightness < 0) return;
+
+  time_t now = time(nullptr);
+
+  struct tm local;
+  localtime_r(&now, &local);
+
+  updateBrightness(local.tm_hour);
+}
+
+void updateBrightness(int32_t hour) {
+
+  if (!displayInitialized) return;
+
+  int8_t brightness;
+
+  // Night time
+  if (
+    getSetting(DAY_NIGHT_CUTOFF_SETTING) <= hour ||
+    hour < getSetting(NIGHT_DAY_CUTOFF_SETTING)
+  ) {
+    brightness = getSetting(BRIGHTNESS_NIGHT_SETTING);
+  // Day time
+  } else {
+    brightness = getSetting(BRIGHTNESS_DAY_SETTING);
+  }
+
+  if (appliedBrightness == brightness) return;
 
   lc.control(MD_MAX72XX::INTENSITY, brightness);
+  appliedBrightness = brightness;
 }
 
 // helpers
@@ -133,13 +155,34 @@ uint64_t numberToSymbol(uint32_t num, uint8_t digits) {
     uint8_t digit = num % 10;
     uint8_t symbol = number_symbols[digit];
 
-    result += (symbol << (8 * i));
+    result |= (symbol << (8 * i));
 
     num /= 10;
 
   }
 
   return result;
+}
+
+uint64_t alarmActiveSymbol(uint64_t millis) {
+
+  uint8_t dp_location = (millis % 1000L) / (125L);
+
+  uint64_t symbol = 0;
+
+  if (dp_location < 4) {
+    for (uint8_t step = 0; step < dp_location; step++) {
+      symbol |= ((uint64_t)DP_S << (step * 8));
+      symbol |= ((uint64_t)DP_S << ((7 - step) * 8));
+    }
+  } else {
+    for (uint8_t step = 0; step < (8 - dp_location); step++) {
+      symbol |= ((uint64_t)DP_S << ((3 - step) * 8));
+      symbol |= ((uint64_t)DP_S << ((4 + step) * 8));
+    }
+  }
+
+  return symbol;
 }
 
 uint64_t dpModeToSymbol(uint8_t mode, uint64_t millis) {
@@ -150,10 +193,8 @@ uint64_t dpModeToSymbol(uint8_t mode, uint64_t millis) {
     
     uint8_t dp_location = (millis % 1000L) / (125L);
     
-    // this is needed to avoid an integer underflow
-    uint64_t temp_dp_symbol = DP_S;
     // update the dp_location'nth display to have the decimal
-    return (temp_dp_symbol << (dp_location * 8));
+    return ((uint64_t)DP_S << (dp_location * 8));
 
   } else if (mode == 2) {
 
