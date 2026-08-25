@@ -3,9 +3,11 @@
 #include <array>
 
 #include "Push.h"
+#include "TruckHorn.h"
 
 const std::array tune_array{
-  AlarmTune{ .name = "Push", .data = push_alarm, .data_length = push_alarm_len }
+  AlarmTune{ .name = "Push", .data = push_alarm, .data_length = push_alarm_len },
+  AlarmTune{ .name = "TruckHorn", .data = truckhorn_alarm, .data_length = truckhorn_alarm_len}
 };
 
 size_t getTuneCount() {

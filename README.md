@@ -34,6 +34,21 @@ Create the ignored local Wi-Fi configuration from the supplied example, then rep
 cp firmware/shiftclock/Generated.hpp.example firmware/shiftclock/Generated.hpp
 ```
 
+#### Audio conversion dependencies
+
+Converting audio files into firmware tune headers requires [FFmpeg](https://ffmpeg.org/download.html). Install it on macOS or Linux with Homebrew:
+
+```bash
+brew install ffmpeg
+```
+
+On Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
 #### Shared mobile app dependencies
 
 Install the current [Node.js LTS release](https://nodejs.org/en/download), which includes npm. Install the locked JavaScript dependencies with:
@@ -158,3 +173,22 @@ build/ios/
 ```
 
 The exact absolute `.app` bundle path is printed when the build completes. This simulator build does not require an Apple Developer signing identity and cannot be installed directly on a physical iPhone.
+
+### Convert audio to a firmware header
+
+Run the converter with a WAV, MP3, or any other audio format supported by FFmpeg:
+
+```bash
+./tools/audio-to-header.sh "/path/to/WakeUp.mp3"
+```
+
+The script performs two-pass loudness normalization to -16 LUFS with a -1 dB true-peak ceiling. It converts the audio to the format expected by Shiftclock—16 kHz, mono, signed 16-bit little-endian PCM—and embeds the raw bytes in a C header.
+
+The header is written beside the input with the same base name and a `.h` extension. The example above creates `/path/to/WakeUp.h`, replaces an existing file at that path, and prints an `ls -lh` listing of the completed file. File names are converted into valid lowercase C identifiers, so the example header contains:
+
+```cpp
+const uint8_t wakeup_alarm[] = { /* normalized PCM bytes */ };
+const uint32_t wakeup_alarm_len = /* byte count */;
+```
+
+To add the generated audio as a firmware tune, place the source audio in `firmware/shiftclock/src/alarm/tunes/` before conversion, include the generated header in `TuneCatalogue.cpp`, and add an `AlarmTune` entry using its array and length symbols.
