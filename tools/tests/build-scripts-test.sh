@@ -30,11 +30,9 @@ copy_script() {
   chmod +x "$fixture_root/tools/$script_name"
 }
 
-test_firmware_build_selects_port_and_uses_no_ota_partition() {
+setup_firmware_fixture() {
   local fixture_root="$1"
   local fake_bin="$fixture_root/fake-bin"
-  local command_log="$fixture_root/commands.log"
-  local output
 
   copy_script "$fixture_root" build-firmware.sh || return 1
   mkdir -p "$fake_bin" "$fixture_root/firmware/shiftclock"
@@ -79,6 +77,15 @@ fi
 exit 2
 EOF
   chmod +x "$fake_bin/arduino-cli"
+}
+
+test_firmware_build_selects_port_and_uses_no_ota_partition() {
+  local fixture_root="$1"
+  local fake_bin="$fixture_root/fake-bin"
+  local command_log="$fixture_root/commands.log"
+  local output
+
+  setup_firmware_fixture "$fixture_root" || return 1
 
   output="$(printf '2\n' | PATH="$fake_bin:$PATH" TEST_COMMAND_LOG="$command_log" "$fixture_root/tools/build-firmware.sh" 2>&1)" || {
     fail "Firmware script failed:\n$output"
@@ -87,9 +94,41 @@ EOF
 
   assert_contains "$(<"$command_log")" 'esp32:esp32:esp32c3:FlashSize=4M,PartitionScheme=no_ota' || return 1
   assert_contains "$(<"$command_log")" 'upload' || return 1
+  assert_contains "$(<"$command_log")" '--board-options UploadSpeed=921600' || return 1
   assert_contains "$(<"$command_log")" '/dev/cu.usbmodem2' || return 1
   assert_file "$fixture_root/build/firmware/shiftclock.ino.bin" || return 1
   assert_contains "$output" "$fixture_root/build/firmware/shiftclock.ino.bin"
+}
+
+test_firmware_build_uses_requested_upload_speed() {
+  local fixture_root="$1"
+  local fake_bin="$fixture_root/fake-bin"
+  local command_log="$fixture_root/commands.log"
+  local output
+
+  setup_firmware_fixture "$fixture_root" || return 1
+
+  output="$(printf '1\n' | PATH="$fake_bin:$PATH" TEST_COMMAND_LOG="$command_log" "$fixture_root/tools/build-firmware.sh" --upload-speed 115200 2>&1)" || {
+    fail "Firmware script failed:\n$output"
+    return 1
+  }
+
+  assert_contains "$(<"$command_log")" '--board-options UploadSpeed=115200'
+}
+
+test_firmware_build_rejects_unsupported_upload_speed() {
+  local fixture_root="$1"
+  local output
+
+  setup_firmware_fixture "$fixture_root" || return 1
+
+  if output="$("$fixture_root/tools/build-firmware.sh" --upload-speed 12345 2>&1)"; then
+    fail 'Firmware script accepted an unsupported upload speed'
+    return 1
+  fi
+
+  assert_contains "$output" 'Error: unsupported upload speed: 12345' || return 1
+  assert_contains "$output" 'Supported upload speeds: 921600, 460800, 230400, 115200'
 }
 
 test_android_build_copies_and_prints_release_apk() {
@@ -214,6 +253,8 @@ run_test() {
 }
 
 run_test 'firmware build selects a port and uses 2MB app/2MB SPIFFS' test_firmware_build_selects_port_and_uses_no_ota_partition
+run_test 'firmware build uses the requested upload speed' test_firmware_build_uses_requested_upload_speed
+run_test 'firmware build rejects an unsupported upload speed' test_firmware_build_rejects_unsupported_upload_speed
 run_test 'Android build copies and prints the release APK' test_android_build_copies_and_prints_release_apk
 run_test 'iOS build places and prints the Release simulator app' test_ios_build_places_and_prints_release_app
 

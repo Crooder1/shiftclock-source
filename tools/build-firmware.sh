@@ -7,6 +7,24 @@ SKETCH_PATH="$REPOSITORY_ROOT/firmware/shiftclock"
 BUILD_PATH="$REPOSITORY_ROOT/build/firmware"
 ARDUINO_CLI="${ARDUINO_CLI:-arduino-cli}"
 FQBN='esp32:esp32:esp32c3:FlashSize=4M,PartitionScheme=no_ota'
+UPLOAD_SPEED='921600'
+
+if (( $# > 0 )); then
+  if [[ "${1:-}" != '--upload-speed' ]] || (( $# != 2 )); then
+    printf 'Usage: %s [--upload-speed <baud>]\n' "${0##*/}" >&2
+    exit 2
+  fi
+  UPLOAD_SPEED="$2"
+fi
+
+case "$UPLOAD_SPEED" in
+  921600|460800|230400|115200) ;;
+  *)
+    printf 'Error: unsupported upload speed: %s\n' "$UPLOAD_SPEED" >&2
+    printf 'Supported upload speeds: 921600, 460800, 230400, 115200\n' >&2
+    exit 2
+    ;;
+esac
 
 if ! command -v "$ARDUINO_CLI" >/dev/null 2>&1; then
   printf 'Error: arduino-cli is required but was not found.\n' >&2
@@ -54,6 +72,7 @@ printf 'Building firmware with the 4MB flash / 2MB app / 2MB SPIFFS layout...\n'
 printf 'Uploading firmware to %s...\n' "$selected_port"
 "$ARDUINO_CLI" upload \
   --fqbn "$FQBN" \
+  --board-options "UploadSpeed=$UPLOAD_SPEED" \
   --port "$selected_port" \
   --input-dir "$BUILD_PATH" \
   "$SKETCH_PATH"
