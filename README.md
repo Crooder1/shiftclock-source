@@ -134,7 +134,7 @@ Connect the ESP32-C3 over USB, then run:
 
 The script lists the active serial ports and prompts for the port to use. It performs a clean build for the ESP32-C3 using a 4MB flash layout with a 2MB application partition and 2MB SPIFFS (`PartitionScheme=no_ota`), then uploads that build to the selected port.
 
-The default upload speed is `921600` baud (the ESP32 board option sometimes referred to as 920000). To use a slower upload speed, pass one of the supported values:
+The default upload speed is `921600` baud. To use a slower upload speed, pass one of the supported values:
 
 ```bash
 ./tools/build-firmware.sh --upload-speed 460800

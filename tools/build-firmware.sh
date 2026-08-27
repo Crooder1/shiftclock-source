@@ -6,7 +6,6 @@ REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SKETCH_PATH="$REPOSITORY_ROOT/firmware/shiftclock"
 BUILD_PATH="$REPOSITORY_ROOT/build/firmware"
 ARDUINO_CLI="${ARDUINO_CLI:-arduino-cli}"
-FQBN='esp32:esp32:esp32c3:FlashSize=4M,PartitionScheme=no_ota'
 UPLOAD_SPEED='921600'
 
 if (( $# > 0 )); then
@@ -25,6 +24,8 @@ case "$UPLOAD_SPEED" in
     exit 2
     ;;
 esac
+
+FQBN="esp32:esp32:esp32c3:FlashSize=4M,PartitionScheme=no_ota,UploadSpeed=$UPLOAD_SPEED"
 
 if ! command -v "$ARDUINO_CLI" >/dev/null 2>&1; then
   printf 'Error: arduino-cli is required but was not found.\n' >&2
@@ -72,7 +73,6 @@ printf 'Building firmware with the 4MB flash / 2MB app / 2MB SPIFFS layout...\n'
 printf 'Uploading firmware to %s...\n' "$selected_port"
 "$ARDUINO_CLI" upload \
   --fqbn "$FQBN" \
-  --board-options "UploadSpeed=$UPLOAD_SPEED" \
   --port "$selected_port" \
   --input-dir "$BUILD_PATH" \
   "$SKETCH_PATH"
