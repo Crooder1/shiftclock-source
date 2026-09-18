@@ -4,6 +4,7 @@ export const SHIFTCLOCK_BLE_UUIDS = {
   settingsCharacteristic: '8984ff44-0002-4291-868b-2a44c36ed7e8',
   messageCharacteristic: '8984ff44-0003-4291-868b-2a44c36ed7e8',
   tuneCharacteristic: '8984ff44-0004-4291-868b-2a44c36ed7e8',
+  wifiCharacteristic: '8984ff44-0005-4291-868b-2a44c36ed7e8',
 } as const;
 
 export const SHIFTCLOCK_BLE_PROTOCOL = {
@@ -108,5 +109,20 @@ export const SHIFTCLOCK_BLE_PROTOCOL = {
     infoOperationSucceeded: { type: 0, code: 0 },
     errorBleJobQueueFailed: { type: 1, code: 3 },
     errorOperationFailed: { type: 1, code: 7 },
+  },
+  wifi: {
+    packetSize: 66,
+    fieldSize: 32,
+    maximumTextLength: 31,
+    offsets: {
+      header: 0,
+      clearCredentials: 1,
+      ssid: 2,
+      password: 34,
+    },
+    clearCredentials: {
+      no: 0,
+      yes: 1,
+    },
   },
 } as const;

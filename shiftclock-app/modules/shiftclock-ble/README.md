@@ -21,6 +21,8 @@ the firmware wire protocol, and `react-native-ble-manager`.
 - `writeSettings(settings)`
 - `commitSettings()`
 - `reloadSettings()`
+- `commitWifiCredentials({ ssid, password })`
+- `clearWifiCredentials()`
 - `addDeviceDiscoveredListener(listener)`
 - `addConnectionStateListener(listener)`
 - `addMessageListener(listener)`
@@ -35,9 +37,9 @@ UUID, packet-size, offset, and range constants.
 
 - Scans for advertisements containing the Clock service UUID.
 - Connects to one clock and discovers the required service and characteristics.
-- Requests an ATT MTU of at least 46 bytes on Android.
+- Requests an ATT MTU of at least 69 bytes on Android for 66-byte WiFi writes.
 - Enables notifications for the 43-byte Message characteristic.
-- Reads and validates the eight-byte Settings snapshot before reporting a
+- Reads and validates the 11-byte Settings snapshot before reporting a
   connection ready.
 - Replays the active connection's confirmed Settings, Alarm, and Tune snapshots
   to newly registered listeners.
@@ -66,6 +68,11 @@ UUID, packet-size, offset, and range constants.
 - Encodes every Settings ID and value as a signed 8-bit two's-complement byte.
   Sends Commit (`-1, -1` / `0xFFFF`) and Reload (`-1, -2` / `0xFFFE`); Reload
   rereads Settings only after acknowledgement.
+- Encodes WiFi credentials as two null-padded 32-byte UTF-8 fields and rejects
+  values longer than 31 characters or 31 encoded bytes. Android establishes a
+  bond before the encrypted WiFi write; iOS pairs when the secure write starts.
+  Both WiFi operations wait for the firmware response, with a 21-second timeout
+  for association and persistence.
 - Decodes valid firmware Message packets and ignores malformed notifications.
 - Reports connection state only after the Clock service is ready.
 - Does not expose Tune audio bytes.

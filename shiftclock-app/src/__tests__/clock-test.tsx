@@ -5,6 +5,8 @@ import ClockScreen from '../app/index';
 import { useAutoConnect } from '@/auto-connect/auto-connect';
 import {
   commitSettings,
+  commitWifiCredentials,
+  clearWifiCredentials,
   connect,
   disconnect,
   reloadSettings,
@@ -24,6 +26,9 @@ let mockSettingsListener: ((settings: ClockSettingsSnapshot | null) => void) | u
 
 jest.mock('../../modules/shiftclock-ble', () => ({
   SHIFTCLOCK_BLE_PROTOCOL: {
+    wifi: {
+      maximumTextLength: 31,
+    },
     settings: {
       ids: {
         timezone: 0,
@@ -45,6 +50,8 @@ jest.mock('../../modules/shiftclock-ble', () => ({
   disconnect: jest.fn().mockResolvedValue(undefined),
   writeSettings: jest.fn().mockResolvedValue(undefined),
   commitSettings: jest.fn().mockResolvedValue(undefined),
+  commitWifiCredentials: jest.fn().mockResolvedValue(undefined),
+  clearWifiCredentials: jest.fn().mockResolvedValue(undefined),
   reloadSettings: jest.fn().mockResolvedValue({
     timezone: 4,
     dayBrightness: 5,
@@ -107,6 +114,8 @@ describe('ClockScreen', () => {
     jest.mocked(disconnect).mockResolvedValue(undefined);
     jest.mocked(writeSettings).mockResolvedValue(undefined);
     jest.mocked(commitSettings).mockResolvedValue(undefined);
+    jest.mocked(commitWifiCredentials).mockResolvedValue(undefined);
+    jest.mocked(clearWifiCredentials).mockResolvedValue(undefined);
     jest.mocked(reloadSettings).mockResolvedValue({
       timezone: 4,
       dayBrightness: 5,
@@ -268,6 +277,63 @@ describe('ClockScreen', () => {
     expect(screen.getByText('Moving decimal point: 2')).toBeTruthy();
     expect(screen.getByText('Volume: 20')).toBeTruthy();
     expect(screen.getByRole('switch', { name: 'Seconds' })).toBeOnTheScreen();
+  });
+
+  test('commits masked WiFi credentials and clears only the password field', async () => {
+    let finishCommit: (() => void) | undefined;
+    let finishClear: (() => void) | undefined;
+    jest.mocked(commitWifiCredentials).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCommit = resolve;
+        })
+    );
+    jest.mocked(clearWifiCredentials).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClear = resolve;
+        })
+    );
+    await renderClock();
+    await act(async () => {
+      mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
+    });
+
+    const ssid = screen.getByLabelText('WiFi SSID');
+    const password = screen.getByLabelText('WiFi password');
+    expect(ssid).toHaveProp('secureTextEntry', false);
+    expect(password).toHaveProp('secureTextEntry', true);
+    await fireEvent.changeText(ssid, 'ClockNet');
+    await fireEvent.changeText(password, 'hunter2');
+    expect(ssid).toHaveProp('value', 'ClockNet');
+    expect(password).toHaveProp('value', 'hunter2');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Commit WiFi credentials' }));
+    expect(commitWifiCredentials).toHaveBeenCalledWith({ ssid: 'ClockNet', password: 'hunter2' });
+    expect(screen.getByLabelText('WiFi password')).toHaveProp('value', '');
+    await act(async () => {
+      finishCommit?.();
+    });
+    expect(screen.getByLabelText('WiFi SSID')).toHaveProp('value', 'ClockNet');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Clear WiFi credentials' }));
+    expect(clearWifiCredentials).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishClear?.();
+    });
+  });
+
+  test('validates WiFi fields at 31 characters before committing', async () => {
+    await renderClock();
+    await act(async () => {
+      mockConnectionListener?.({ state: 'connected', deviceId: 'clock-1' });
+    });
+
+    await fireEvent.changeText(screen.getByLabelText('WiFi SSID'), 's'.repeat(32));
+    await fireEvent.press(screen.getByRole('button', { name: 'Commit WiFi credentials' }));
+
+    expect(commitWifiCredentials).not.toHaveBeenCalled();
+    expect(screen.getByText('WiFi SSID must be 31 characters or fewer.')).toBeTruthy();
   });
 
   test('sends toggle values and exact Commit and Reload commands through the facade', async () => {

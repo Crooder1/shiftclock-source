@@ -62,6 +62,8 @@ bool initializeBLE() {
   }
 
   NimBLEDevice::init(CLOCK_NAME);
+  NimBLEDevice::setSecurityAuth(true, false, true);
+  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
   if (!NimBLEDevice::setMTU(PREFERRED_ATT_MTU)) {
     Serial.println("BLE preferred MTU setup failed");
     deinitializeBLETaskQueue();

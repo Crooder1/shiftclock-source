@@ -6,6 +6,7 @@ import type {
   ClockSettingsSnapshot,
   FirmwareMessage,
   TuneReadResponse,
+  WifiCredentials,
 } from './ShiftclockBle.types';
 
 export type AlarmMutationCommand = 'add' | 'modify' | 'remove';
@@ -203,6 +204,44 @@ export function encodeSettings(settings: ClockSettings): number[] {
     SHIFTCLOCK_BLE_PROTOCOL.header,
     settings.id & 0xff,
     settings.value & 0xff,
+  ];
+}
+
+function encodeWifiText(value: string, label: 'SSID' | 'password'): number[] {
+  const wifi = SHIFTCLOCK_BLE_PROTOCOL.wifi;
+  if (Array.from(value).length > wifi.maximumTextLength) {
+    throw new Error(`WiFi ${label} must be 31 characters or fewer`);
+  }
+  if (value.includes('\0')) {
+    throw new Error(`WiFi ${label} must not contain a null character`);
+  }
+
+  const bytes = Array.from(new TextEncoder().encode(value));
+  if (bytes.length > wifi.maximumTextLength) {
+    throw new Error(`WiFi ${label} must fit in 31 UTF-8 bytes`);
+  }
+  return [...bytes, ...Array(wifi.fieldSize - bytes.length).fill(0)];
+}
+
+export function encodeWifiCredentials(credentials: WifiCredentials): number[] {
+  const wifi = SHIFTCLOCK_BLE_PROTOCOL.wifi;
+  if (credentials.ssid.length === 0) {
+    throw new Error('WiFi SSID is required');
+  }
+  return [
+    SHIFTCLOCK_BLE_PROTOCOL.header,
+    wifi.clearCredentials.no,
+    ...encodeWifiText(credentials.ssid, 'SSID'),
+    ...encodeWifiText(credentials.password, 'password'),
+  ];
+}
+
+export function encodeClearWifiCredentials(): number[] {
+  const wifi = SHIFTCLOCK_BLE_PROTOCOL.wifi;
+  return [
+    SHIFTCLOCK_BLE_PROTOCOL.header,
+    wifi.clearCredentials.yes,
+    ...Array(wifi.packetSize - wifi.offsets.ssid).fill(0),
   ];
 }
 

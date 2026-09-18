@@ -8,10 +8,12 @@ import {
   encodeAlarmCommand,
   encodeAlarmMutation,
   encodeAlarmSelection,
+  encodeClearWifiCredentials,
   encodeSettings,
   encodeTuneCancel,
   encodeTunePlay,
   encodeTuneSelection,
+  encodeWifiCredentials,
 } from '../ShiftclockBle.protocol';
 
 const SETTINGS_PACKET = [0, 0xfb, 12, 2, 22, 6, 1, 2, 20, 1, 0] as const;
@@ -159,6 +161,25 @@ describe('Shiftclock BLE protocol', () => {
     expect(() => encodeSettings({ id: 128, value: 0 })).toThrow('Invalid Settings');
     expect(() => encodeSettings({ id: 0, value: -129 })).toThrow('Invalid Settings');
     expect(() => encodeSettings({ id: 0, value: 1.5 })).toThrow('Invalid Settings');
+  });
+
+  test('encodes fixed-size WiFi credential and clear packets', () => {
+    expect(encodeWifiCredentials({ ssid: 'ClockNet', password: 'hunter2' })).toEqual([
+      0,
+      0,
+      ...Array.from('ClockNet', (character) => character.charCodeAt(0)),
+      ...Array(24).fill(0),
+      ...Array.from('hunter2', (character) => character.charCodeAt(0)),
+      ...Array(25).fill(0),
+    ]);
+    expect(encodeClearWifiCredentials()).toEqual([0, 1, ...Array(64).fill(0)]);
+  });
+
+  test.each([
+    ['SSID', { ssid: 's'.repeat(32), password: 'password' }],
+    ['password', { ssid: 'ClockNet', password: 'p'.repeat(32) }],
+  ])('rejects a WiFi %s longer than 31 characters', (_field, credentials) => {
+    expect(() => encodeWifiCredentials(credentials)).toThrow('31 characters');
   });
 
   test('decodes the exact Settings read packet in firmware ID order', () => {

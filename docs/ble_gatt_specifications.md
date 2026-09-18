@@ -12,18 +12,21 @@ an attribute explicitly says otherwise.
   Response is accepted.
 - The firmware is configured for one active BLE connection. A second central
   cannot connect until the current connection ends.
-- Alarm Add, Modify, Remove, Commit, and Reload writes plus Settings writes are
-  copied into the Clock FIFO. Tune Play writes use a separate audio FIFO
+- The WiFi characteristic requires an encrypted link. The firmware uses bonded
+  Just Works pairing with LE Secure Connections; it does not provide MITM
+  protection because the device has no input or display for passkey pairing.
+- Alarm Add, Modify, Remove, Commit, and Reload writes plus Settings and WiFi
+  writes are copied into the Clock FIFO. Tune Play writes use a separate audio FIFO
   consumed by the Alarm worker, which is the sole I2S writer. Tune Cancel
   uses a reserved Stop slot so cancellation cannot be rejected by four pending
   Play commands. Alarm and Tune Read selection are handled directly in their
   characteristic callbacks.
 - Packet size and header validation plus enqueueing happen in the
-  characteristic write callback. Queued Alarm commands and field ranges are
-  validated by the worker before the Alarm collection is changed.
-- The largest attribute is the 43-byte Message packet. A notification needs an
-  ATT MTU of at least 46 bytes (`43 + 3` bytes of ATT overhead). The firmware
-  configures 46 as its preferred local MTU, but the client must still initiate
+  characteristic write callback. Queued Alarm commands and field ranges plus
+  null-padded WiFi fields are validated by the worker before state is changed.
+- The largest attribute is the 66-byte WiFi write packet. It needs an ATT MTU
+  of at least 69 bytes (`66 + 3` bytes of ATT overhead). The firmware
+  configures 69 as its preferred local MTU, but the client must still initiate
   and complete MTU exchange.
 - No time-based client rate limits are currently defined or enforced.
 
@@ -40,9 +43,10 @@ Only the Clock service UUID is included in advertising.
 | Characteristic | UUID | Properties | Size | Client interval |
 | --- | --- | --- | ---: | ---: |
 | Alarm | `8984ff44-0001-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 13 write, 12 read | N/A |
-| Settings | `8984ff44-0002-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 3 write, 8 read | N/A |
+| Settings | `8984ff44-0002-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 3 write, 11 read | N/A |
 | Message | `8984ff44-0003-4291-868b-2a44c36ed7e8` | Notify | 43 | N/A |
 | Tune | `8984ff44-0004-4291-868b-2a44c36ed7e8` | Read, Write, Write NR | 3 write, 26 read | N/A |
+| Wifi | `8984ff44-0005-4291-868b-2a44c36ed7e8` | Write, Write NR, Write Enc | 66 | N/A |
 
 ### Alarm write packet
 
@@ -150,12 +154,15 @@ Settings use these IDs and inclusive value ranges:
 | ID | Setting | Range |
 | ---: | --- | ---: |
 | `0` | Timezone offset in hours | `-12` through `11` |
-| `1` | Brightness | `0` through `15` |
-| `2` | Seconds | `0` through `1` |
-| `3` | Moving decimal point | `0` through `2` |
-| `4` | Volume | `0` through `100` |
-| `5` | 12-hour clock | `0` through `1` |
-| `6` | AM/PM indicator | `0` through `1` |
+| `1` | Day brightness | `0` through `15` |
+| `2` | Night brightness | `0` through `15` |
+| `3` | Day-to-night cutoff hour | `0` through `23` |
+| `4` | Night-to-day cutoff hour | `0` through `23` |
+| `5` | Seconds | `0` through `1` |
+| `6` | Moving decimal point | `0` through `2` |
+| `7` | Volume | `0` through `100` |
+| `8` | 12-hour clock | `0` through `1` |
+| `9` | AM/PM indicator | `0` through `1` |
 
 Setting ID `-1` (`0xFF`) selects a persistence command:
 
@@ -164,8 +171,8 @@ Setting ID `-1` (`0xFF`) selects a persistence command:
 
 ### Settings read packet
 
-Settings reads return exactly 8 bytes: header `0`, followed by the seven
-signed Settings values in ID order from `0` through `6`. Every value byte uses
+Settings reads return exactly 11 bytes: header `0`, followed by the ten signed
+Settings values in ID order from `0` through `9`. Every value byte uses
 two's-complement encoding; for example, timezone `-12` is encoded as `0xF4`.
 
 ### Message packet
@@ -195,3 +202,19 @@ Current error codes are:
 
 Queue-creation, worker-creation, and other failures that occur before the
 Message characteristic is available are written to the serial log instead.
+
+### Wifi write packet
+
+WiFi writes are exactly 66 bytes:
+
+- Header: 1 byte. Must be `0`.
+- Clear config: 1 byte. `0` stores the supplied credentials after a successful
+  WiFi connection; `1` clears stored credentials. A clear request still carries
+  null-padded SSID and Password fields, which are otherwise ignored.
+- SSID: 32 bytes, null padded. It must contain a non-empty value and a null
+  terminator, so at most 31 bytes are usable.
+- Password: 32 bytes, null padded. It must contain a null terminator, so at
+  most 31 bytes are usable; an empty password supports open networks.
+
+The central must pair and establish link encryption before writing this
+characteristic. Successful pairings are bonded and reused on later connections.

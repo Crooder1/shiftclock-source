@@ -57,8 +57,10 @@ function createManager() {
     isScanning: jest.fn().mockResolvedValue(false),
     connect: jest.fn().mockResolvedValue(undefined),
     disconnect: jest.fn().mockResolvedValue(undefined),
+    createBond: jest.fn().mockResolvedValue(undefined),
+    getBondedPeripherals: jest.fn().mockResolvedValue([]),
     retrieveServices: jest.fn().mockResolvedValue(readyPeripheral()),
-    requestMTU: jest.fn().mockResolvedValue(46),
+    requestMTU: jest.fn().mockResolvedValue(69),
     read: jest.fn().mockResolvedValue([0, 0xfb, 12, 2, 22, 6, 1, 2, 20, 1, 0]),
     startNotification: jest.fn().mockResolvedValue(undefined),
     stopNotification: jest.fn().mockResolvedValue(undefined),
@@ -180,7 +182,7 @@ describe('ShiftclockBleController', () => {
 
     await controller.connect('clock-1');
 
-    expect(fake.manager.requestMTU).toHaveBeenCalledWith('clock-1', 46);
+    expect(fake.manager.requestMTU).toHaveBeenCalledWith('clock-1', 69);
     expect(fake.manager.startNotification).toHaveBeenCalledWith(
       'clock-1',
       '8984ff44-0000-4291-868b-2a44c36ed7e8',
@@ -948,6 +950,57 @@ describe('ShiftclockBleController', () => {
     await acknowledgeSettings(fake);
 
     await expect(write).resolves.toBeUndefined();
+  });
+
+  test('bonds Android before writing WiFi credentials and waits for firmware success', async () => {
+    const fake = createManager();
+    const controller = new ShiftclockBleController(fake.manager, 'android', async () => undefined);
+    await controller.connect('clock-1');
+
+    const write = controller.writeWifiCredentials({ ssid: 'ClockNet', password: 'hunter2' });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(fake.manager.getBondedPeripherals).toHaveBeenCalledTimes(1);
+    expect(fake.manager.createBond).toHaveBeenCalledWith('clock-1');
+    expect(fake.manager.write).toHaveBeenLastCalledWith(
+      'clock-1',
+      '8984ff44-0000-4291-868b-2a44c36ed7e8',
+      '8984ff44-0005-4291-868b-2a44c36ed7e8',
+      [
+        0,
+        0,
+        ...Array.from('ClockNet', (character) => character.charCodeAt(0)),
+        ...Array(24).fill(0),
+        ...Array.from('hunter2', (character) => character.charCodeAt(0)),
+        ...Array(25).fill(0),
+      ],
+      66
+    );
+
+    await acknowledgeSettings(fake);
+    await expect(write).resolves.toBeUndefined();
+  });
+
+  test('does not repeat an existing Android bond when clearing WiFi credentials', async () => {
+    const fake = createManager();
+    jest.mocked(fake.manager.getBondedPeripherals).mockResolvedValue([
+      { id: 'CLOCK-1', rssi: -48, advertising: {} },
+    ]);
+    const controller = new ShiftclockBleController(fake.manager, 'android', async () => undefined);
+    await controller.connect('clock-1');
+
+    const clear = controller.clearWifiCredentials();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(fake.manager.createBond).not.toHaveBeenCalled();
+    expect(fake.manager.write).toHaveBeenLastCalledWith(
+      'clock-1',
+      '8984ff44-0000-4291-868b-2a44c36ed7e8',
+      '8984ff44-0005-4291-868b-2a44c36ed7e8',
+      [0, 1, ...Array(64).fill(0)],
+      66
+    );
+
+    await acknowledgeSettings(fake);
+    await expect(clear).resolves.toBeUndefined();
   });
 
   test('registers the Settings acknowledgement before the native write', async () => {

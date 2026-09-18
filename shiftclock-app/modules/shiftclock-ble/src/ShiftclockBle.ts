@@ -22,6 +22,7 @@ import type {
   FirmwareMessage,
   ShiftclockDevice,
   TuneMetadata,
+  WifiCredentials,
 } from './ShiftclockBle.types';
 
 const platform: ShiftclockPlatform =
@@ -96,6 +97,14 @@ export function reloadAlarms(): Promise<readonly AlarmRecord[]> {
 
 export function writeSettings(settings: ClockSettings): Promise<void> {
   return controller.writeSettings(settings);
+}
+
+export function commitWifiCredentials(credentials: WifiCredentials): Promise<void> {
+  return controller.writeWifiCredentials(credentials);
+}
+
+export function clearWifiCredentials(): Promise<void> {
+  return controller.clearWifiCredentials();
 }
 
 export function commitSettings(): Promise<void> {

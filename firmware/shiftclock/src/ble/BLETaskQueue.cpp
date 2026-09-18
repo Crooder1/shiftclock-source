@@ -35,6 +35,10 @@ void clockWorker(void*) {
       case ClockJobType::Settings:
         processSettingsWrite(job.packet.settings);
         break;
+
+      case ClockJobType::Wifi:
+        processWifiWrite(job.packet.wifi);
+        break;
     }
   }
 

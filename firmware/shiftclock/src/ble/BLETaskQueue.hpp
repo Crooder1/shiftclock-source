@@ -15,7 +15,8 @@ constexpr uint8_t CLOCK_QUEUE_SIZE = 4;
 enum class ClockJobType : uint8_t {
   TaskShutdown,
   Alarm,
-  Settings
+  Settings,
+  Wifi
 };
 
 struct ClockJob {
@@ -23,6 +24,7 @@ struct ClockJob {
   union {
     uint8_t alarm[ALARM_WRITE_PACKET_SIZE];
     uint8_t settings[SETTINGS_WRITE_PACKET_SIZE];
+    uint8_t wifi[WIFI_WRITE_PACKET_SIZE];
   } packet;
 };
 

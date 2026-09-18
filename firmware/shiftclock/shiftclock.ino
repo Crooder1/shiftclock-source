@@ -29,7 +29,13 @@ void loop() {
   // Something about watchdog and not blocking setup()
   if (!wifi_initialized) {
     displaySymbols(CONNECTING_SYMBOL);
-    initWifi();
+    if (!initWifi()) {
+      delay(100);
+      return;
+    }
+  }
+
+  if (!time_initialized) {
     displaySymbols(SYNCING_SYMBOL);
     initTime();
 

@@ -30,5 +30,10 @@ class SettingsCallback final : public NimBLECharacteristicCallbacks {
   void onRead(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) override;
 };
 
+class WifiCallback final : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) override;
+};
+
 void processAlarmWrite(const uint8_t (&packet)[ALARM_WRITE_PACKET_SIZE]);
 void processSettingsWrite(const uint8_t (&packet)[SETTINGS_WRITE_PACKET_SIZE]);
+void processWifiWrite(const uint8_t (&packet)[WIFI_WRITE_PACKET_SIZE]);

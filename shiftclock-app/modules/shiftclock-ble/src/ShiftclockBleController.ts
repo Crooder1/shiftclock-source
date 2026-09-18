@@ -7,10 +7,12 @@ import {
   encodeAlarmCommand,
   encodeAlarmMutation,
   encodeAlarmSelection,
+  encodeClearWifiCredentials,
   encodeSettings,
   encodeTuneCancel,
   encodeTunePlay,
   encodeTuneSelection,
+  encodeWifiCredentials,
 } from './ShiftclockBle.protocol';
 import type {
   Alarm,
@@ -22,6 +24,7 @@ import type {
   FirmwareMessage,
   ShiftclockDevice,
   TuneMetadata,
+  WifiCredentials,
 } from './ShiftclockBle.types';
 
 export type BleManagerSubscription = { remove(): void };
@@ -61,6 +64,8 @@ export type BleManagerClient = {
   isScanning(): Promise<boolean>;
   connect(peripheralId: string): Promise<void>;
   disconnect(peripheralId: string, force?: boolean): Promise<void>;
+  createBond(peripheralId: string, peripheralPin?: string | null): Promise<void>;
+  getBondedPeripherals(): Promise<BlePeripheral[]>;
   retrieveServices(peripheralId: string, serviceUUIDs?: string[]): Promise<BlePeripheralInfo>;
   requestMTU(peripheralId: string, mtu: number): Promise<number>;
   read(
@@ -102,6 +107,7 @@ type Listener<T> = (value: T) => void;
 const CONNECT_TIMEOUT_MS = 15_000;
 const BLE_STATE_TIMEOUT_MS = 5_000;
 const OPERATION_ACKNOWLEDGEMENT_TIMEOUT_MS = 1_000;
+const WIFI_ACKNOWLEDGEMENT_TIMEOUT_MS = 21_000;
 
 type OperationAcknowledgement = {
   deviceId: string;
@@ -286,12 +292,13 @@ export class ShiftclockBleController {
       this.assertClockService(peripheral);
 
       if (this.platform === 'android') {
+        const requiredMtu = SHIFTCLOCK_BLE_PROTOCOL.wifi.packetSize + 3;
         const mtu = await this.manager.requestMTU(
           deviceId,
-          SHIFTCLOCK_BLE_PROTOCOL.message.packetSize + 3
+          requiredMtu
         );
-        if (mtu < SHIFTCLOCK_BLE_PROTOCOL.message.packetSize + 3) {
-          throw new Error(`Negotiated ATT MTU ${mtu} is too small for Shiftclock messages`);
+        if (mtu < requiredMtu) {
+          throw new Error(`Negotiated ATT MTU ${mtu} is too small for Shiftclock WiFi writes`);
         }
       }
 
@@ -550,6 +557,38 @@ export class ShiftclockBleController {
         this.emitSettings(this.withSettingValue(currentSettings, settings));
       }
     );
+  }
+
+  async writeWifiCredentials(credentials: WifiCredentials): Promise<void> {
+    const packet = encodeWifiCredentials(credentials);
+    await this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
+      await this.ensureWifiBonded(deviceId);
+      await this.writeAcknowledged(
+        deviceId,
+        connectionGeneration,
+        SHIFTCLOCK_BLE_UUIDS.wifiCharacteristic,
+        packet,
+        SHIFTCLOCK_BLE_PROTOCOL.wifi.packetSize,
+        'WiFi credential commit',
+        WIFI_ACKNOWLEDGEMENT_TIMEOUT_MS
+      );
+    });
+  }
+
+  async clearWifiCredentials(): Promise<void> {
+    const packet = encodeClearWifiCredentials();
+    await this.enqueueConnectedOperation(async (deviceId, connectionGeneration) => {
+      await this.ensureWifiBonded(deviceId);
+      await this.writeAcknowledged(
+        deviceId,
+        connectionGeneration,
+        SHIFTCLOCK_BLE_UUIDS.wifiCharacteristic,
+        packet,
+        SHIFTCLOCK_BLE_PROTOCOL.wifi.packetSize,
+        'WiFi credential clear',
+        WIFI_ACKNOWLEDGEMENT_TIMEOUT_MS
+      );
+    });
   }
 
   async commitSettings(): Promise<void> {
@@ -947,6 +986,17 @@ export class ShiftclockBleController {
       );
       return afterAcknowledgement(deviceId);
     });
+  }
+
+  private async ensureWifiBonded(deviceId: string): Promise<void> {
+    if (this.platform !== 'android') return;
+
+    const bondedPeripherals = await this.manager.getBondedPeripherals();
+    const normalizedDeviceId = deviceId.toLowerCase();
+    if (bondedPeripherals.some((peripheral) => peripheral.id.toLowerCase() === normalizedDeviceId)) {
+      return;
+    }
+    await this.manager.createBond(deviceId);
   }
 
   private async writeAcknowledged(

@@ -47,6 +47,11 @@ export type ClockSettings = {
   value: number;
 };
 
+export type WifiCredentials = {
+  ssid: string;
+  password: string;
+};
+
 export type ClockSettingsSnapshot = {
   timezone: number;
   dayBrightness: number;

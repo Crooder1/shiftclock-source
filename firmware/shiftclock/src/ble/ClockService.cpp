@@ -2,6 +2,7 @@
 
 #include "../alarm/Alarm.hpp"
 #include "../Settings.hpp"
+#include "../Wifi.hpp"
 #include "BLE.hpp"
 #include "BLEHelper.hpp"
 #include "BLEProtocol.hpp"
@@ -18,6 +19,7 @@ NimBLECharacteristic* messageCharacteristic = nullptr;
 AlarmWriteCallback alarmWriteCallback;
 TuneCallback tuneCallback;
 SettingsCallback settingsCallback;
+WifiCallback wifiCallback;
 
 void acknowledgeTunePreview() {
   emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Tune Write Succeeded");
@@ -95,6 +97,15 @@ NimBLEService* createClockService(NimBLEServer& server) {
     NIMBLE_PROPERTY::READ
   );
   settings->setCallbacks(&settingsCallback);
+
+  NimBLECharacteristic* wifi = service->createCharacteristic(
+    WIFI_CHAR_UUID,
+    NIMBLE_PROPERTY::WRITE |
+    NIMBLE_PROPERTY::WRITE_NR |
+    NIMBLE_PROPERTY::WRITE_ENC
+  );
+  if (wifi == nullptr) return nullptr;
+  wifi->setCallbacks(&wifiCallback);
 
   messageCharacteristic = service->createCharacteristic(
     MESSAGE_CHAR_UUID,
@@ -310,6 +321,44 @@ void SettingsCallback::onRead(NimBLECharacteristic* characteristic, NimBLEConnIn
   characteristic->setValue(packet, sizeof(packet));
 }
 
+void WifiCallback::onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connection) {
+  (void)connection;
+
+  const std::string value = characteristic->getValue();
+  const auto* data = reinterpret_cast<const uint8_t*>(value.data());
+  const size_t dataLength = value.size();
+
+  if (dataLength != WIFI_WRITE_PACKET_SIZE) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET_SIZE, "Write Wifi: Invalid Size");
+    return;
+  }
+
+  if (!hasSupportedHeader(data, dataLength)) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Write Wifi: Invalid Packet");
+    return;
+  }
+
+  const uint8_t clearConfig = readByte(
+    data,
+    dataLength,
+    WIFI_CLEAR_CONFIG_OFFSET);
+  if (
+    clearConfig != WIFI_CLEAR_CONFIG_FALSE
+    && clearConfig != WIFI_CLEAR_CONFIG_TRUE
+  ) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Write Wifi: Invalid Clear Flag");
+    return;
+  }
+
+  ClockJob clockJob{};
+  clockJob.type = ClockJobType::Wifi;
+  memcpy(clockJob.packet.wifi, data, dataLength);
+
+  if (!queueClockJob(clockJob)) {
+    emitMessage(ERROR_TAG, ERROR_BLE_JOB_QUEUE_FAILED, "Write Wifi: Queue Full");
+  }
+}
+
 void processAlarmWrite(const uint8_t (&packet)[ALARM_WRITE_PACKET_SIZE]) {
   
   const uint8_t command = readByte(packet, sizeof(packet), ALARM_COMMAND_OFFSET);
@@ -412,4 +461,47 @@ void processSettingsWrite(const uint8_t (&packet)[SETTINGS_WRITE_PACKET_SIZE]) {
 
   setSetting(static_cast<uint8_t>(settingId), settingValue);
   emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Settings Write Succeeded");
+}
+
+void processWifiWrite(const uint8_t (&packet)[WIFI_WRITE_PACKET_SIZE]) {
+  const uint8_t clearConfig = readByte(
+    packet,
+    sizeof(packet),
+    WIFI_CLEAR_CONFIG_OFFSET);
+
+  const auto* ssid = reinterpret_cast<const char*>(packet + WIFI_SSID_OFFSET);
+  const auto* password = reinterpret_cast<const char*>(packet + WIFI_PASSWORD_OFFSET);
+  const size_t ssidLength = strnlen(ssid, WIFI_SSID_SIZE);
+  const size_t passwordLength = strnlen(password, WIFI_PASSWORD_SIZE);
+  if (ssidLength == WIFI_SSID_SIZE || passwordLength == WIFI_PASSWORD_SIZE) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Write Wifi: Invalid Credentials");
+    return;
+  }
+
+  WifiCredentials credentials{
+    .ssid = std::string(ssid, ssidLength),
+    .password = std::string(password, passwordLength),
+  };
+
+  if (clearConfig == WIFI_CLEAR_CONFIG_TRUE) {
+    if (!clearWifiCredentials()) {
+      emitMessage(ERROR_TAG, ERROR_OPERATION_FAILED, "Wifi Clear Failed");
+      return;
+    }
+
+    emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Wifi Clear Succeeded");
+    return;
+  }
+
+  if (credentials.ssid.empty()) {
+    emitMessage(ERROR_TAG, ERROR_INVALID_PACKET, "Write Wifi: Invalid Credentials");
+    return;
+  }
+
+  if (!setWifiCredentials(credentials)) {
+    emitMessage(ERROR_TAG, ERROR_OPERATION_FAILED, "Wifi Connection Failed");
+    return;
+  }
+
+  emitMessage(INFO_TAG, INFO_OPERATION_SUCCEEDED, "Wifi Write Succeeded");
 }

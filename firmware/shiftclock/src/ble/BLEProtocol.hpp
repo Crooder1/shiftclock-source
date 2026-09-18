@@ -11,6 +11,7 @@ inline constexpr char ALARM_CHAR_UUID[] = "8984ff44-0001-4291-868b-2a44c36ed7e8"
 inline constexpr char SETTINGS_CHAR_UUID[] = "8984ff44-0002-4291-868b-2a44c36ed7e8";
 inline constexpr char MESSAGE_CHAR_UUID[] = "8984ff44-0003-4291-868b-2a44c36ed7e8";
 inline constexpr char TUNE_CHAR_UUID[] = "8984ff44-0004-4291-868b-2a44c36ed7e8";
+inline constexpr char WIFI_CHAR_UUID[] = "8984ff44-0005-4291-868b-2a44c36ed7e8";
 
 constexpr uint8_t PROTOCOL_HEADER = 0;
 
@@ -46,12 +47,21 @@ constexpr size_t SETTINGS_VALUE_OFFSET = 2;
 constexpr size_t SETTINGS_WRITE_PACKET_SIZE = 3;
 constexpr size_t SETTINGS_READ_PACKET_SIZE = 11; 
 
+constexpr size_t WIFI_CLEAR_CONFIG_OFFSET = 1;
+constexpr size_t WIFI_SSID_OFFSET = 2;
+constexpr size_t WIFI_SSID_SIZE = 32;
+constexpr size_t WIFI_PASSWORD_OFFSET = WIFI_SSID_OFFSET + WIFI_SSID_SIZE;
+constexpr size_t WIFI_PASSWORD_SIZE = 32;
+constexpr size_t WIFI_WRITE_PACKET_SIZE = WIFI_PASSWORD_OFFSET + WIFI_PASSWORD_SIZE;
+constexpr uint8_t WIFI_CLEAR_CONFIG_FALSE = 0;
+constexpr uint8_t WIFI_CLEAR_CONFIG_TRUE = 1;
+
 constexpr size_t MESSAGE_TYPE_OFFSET = 1;
 constexpr size_t MESSAGE_CODE_OFFSET = 2;
 constexpr size_t MESSAGE_DESCRIPTION_OFFSET = 3;
 constexpr size_t MESSAGE_DESCRIPTION_SIZE = 40;
 constexpr size_t MESSAGE_PACKET_SIZE = 43;
-constexpr uint16_t PREFERRED_ATT_MTU = MESSAGE_PACKET_SIZE + 3;
+constexpr uint16_t PREFERRED_ATT_MTU = WIFI_WRITE_PACKET_SIZE + 3;
 
 // --- Alarm Commands ---
 constexpr uint8_t ALARM_READ_COMMAND = 0x0;

@@ -16,6 +16,7 @@ import { ThemedView } from '@/components/themed-view';
 import { ActionButton } from '@/components/action-button';
 import { useAutoConnect } from '@/auto-connect/auto-connect';
 import { ClockSettingsCard } from '@/components/clock-settings-card';
+import { WifiCredentialsCard } from '@/components/wifi-credentials-card';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -224,6 +225,8 @@ export default function ClockScreen() {
           enabled={clockSettingsEnabled}
           onActionMessage={setActionMessage}
         />
+
+        <WifiCredentialsCard enabled={connected} onActionMessage={setActionMessage} />
 
         {displayedMessage ? (
           <ThemedView type="backgroundElement" style={styles.messageCard}>
